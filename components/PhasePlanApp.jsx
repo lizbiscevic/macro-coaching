@@ -21,9 +21,9 @@ const COACH = {
 
 const PRICES = {
   diy: { amount: "$89", cadence: "one time" },
-  m1: { amount: "$249", cadence: "per month" },
-  m3: { amount: "$199", cadence: "per month · 3 months" },
-  m6: { amount: "$169", cadence: "per month · 6 months" },
+  m1: { amount: "$249", cadence: "per month · cancel any time" },
+  m3: { amount: "$597", cadence: "one time · $199/mo · 3 months" },
+  m6: { amount: "$1,014", cadence: "one time · $169/mo · 6 months" },
 };
 
 const TIER_NAMES = {
@@ -591,7 +591,10 @@ function Pricing({ plan, onChoose, onBack }) {
           </div>
         ))}
       </div>
-      <p className="micro center">Cancel any time. If the plan isn't right for you in week one, I'll refund it.</p>
+      <p className="micro center">
+        3 and 6 month plans are a one-time purchase. 1 month is a real subscription — cancel any
+        time. Not right for you in week one? I'll refund it.
+      </p>
     </section>
   );
 }
