@@ -30,14 +30,17 @@ export async function POST(req) {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || req.headers.get("origin");
 
-  const session = await stripe.checkout.sessions.create({
-    mode: SUBSCRIPTION_TIERS.has(tier) ? "subscription" : "payment",
-    line_items: [{ price: priceId, quantity: 1 }],
-    customer_email: email,
-    client_reference_id: leadId,
-    success_url: `${siteUrl}/?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${siteUrl}/`,
-  });
-
-  return NextResponse.json({ url: session.url });
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: SUBSCRIPTION_TIERS.has(tier) ? "subscription" : "payment",
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: email,
+      client_reference_id: leadId,
+      success_url: `${siteUrl}/?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${siteUrl}/`,
+    });
+    return NextResponse.json({ url: session.url });
+  } catch (err) {
+    return NextResponse.json({ configured: false, error: err.message }, { status: 500 });
+  }
 }
