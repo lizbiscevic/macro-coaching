@@ -37,7 +37,7 @@ const TIER_NAMES = {
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-export default function PhasePlanApp({ stripeLinks = {} }) {
+export default function PhasePlanApp() {
   const [step, setStep] = useState("calc");
   const [form, setForm] = useState({
     sex: "female",
@@ -335,7 +335,6 @@ export default function PhasePlanApp({ stripeLinks = {} }) {
           tier={tier}
           leadId={leadId}
           startDate={startDate}
-          stripeLinks={stripeLinks}
           onPaid={paid}
           onBack={() => setStep("pricing")}
         />
@@ -597,19 +596,21 @@ function Pricing({ plan, onChoose, onBack }) {
   );
 }
 
-function Checkout({ plan, tier, leadId, startDate, stripeLinks, onPaid, onBack }) {
+function Checkout({ plan, tier, leadId, startDate, onPaid, onBack }) {
   const [c, setC] = useState({ name: "", email: "", agree: false });
   const [err, setErr] = useState("");
+  const [going, setGoing] = useState(false);
   const price = PRICES[tier];
   const start = new Date(startDate + "T00:00:00");
   const end = addWeeks(start, plan?.totalWeeks || 0);
   const set = (k) => (e) => setC({ ...c, [k]: e.target.value });
 
-  const go = () => {
+  const go = async () => {
     if (!c.name.trim()) return setErr("I need a name to put on your plan.");
     if (!/^\S+@\S+\.\S+$/.test(c.email)) return setErr("That email doesn't look right — check it and try again.");
     if (!c.agree) return setErr("Tick the box so we're on the same page about what you're buying.");
     setErr("");
+    setGoing(true);
 
     // This is the only moment we have name/email before handing off to
     // Stripe's hosted page — save it now so the record has it even though
@@ -622,17 +623,24 @@ function Checkout({ plan, tier, leadId, startDate, stripeLinks, onPaid, onBack }
       }).catch(() => {});
     }
 
-    const link = stripeLinks[tier];
-    if (link) {
-      const params = new URLSearchParams({ prefilled_email: c.email });
-      if (leadId) params.set("client_reference_id", leadId);
-      // Full navigation to Stripe's hosted checkout, not an internal route —
-      // router.push()/redirect() don't apply to an off-site destination.
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = `${link}?${params.toString()}`;
-    } else {
-      onPaid(c.email);
+    try {
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier, email: c.email, leadId }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        // Full navigation to Stripe's hosted checkout, not an internal route —
+        // router.push()/redirect() don't apply to an off-site destination.
+        window.location.href = data.url;
+        return;
+      }
+    } catch (e) {
+      // fall through to demo mode below
     }
+    setGoing(false);
+    onPaid(c.email);
   };
 
   return (
@@ -662,8 +670,8 @@ function Checkout({ plan, tier, leadId, startDate, stripeLinks, onPaid, onBack }
             </span>
           </label>
 
-          <button className="cta" onClick={go}>
-            Continue to secure payment
+          <button className="cta" onClick={go} disabled={going}>
+            {going ? "One sec…" : "Continue to secure payment"}
           </button>
           {err && <p className="problem">{err}</p>}
           <p className="micro">
