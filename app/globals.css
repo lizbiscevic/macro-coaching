@@ -5,16 +5,16 @@
    that component (login, portal, coach) so they share the same palette
    without redeclaring it per page. */
 :root {
-  --ink: #0e1a22;
-  --tide: #16262f;
-  --panel: #1b2f39;
-  --edge: #274150;
-  --edge-lit: #3e6373;
-  --chalk: #efe7d8;
-  --mute: #8fa6b0;
-  --sage: #8fb08a;
-  --gold: #d9a54c;
-  --rose: #c97f6e;
+  --ink: #faf7fa;
+  --tide: #ffffff;
+  --panel: #ffffff;
+  --edge: #e5dee3;
+  --edge-lit: #0b7a78;
+  --chalk: #241e28;
+  --mute: #6e6875;
+  --sage: #3ad1c2;
+  --gold: #6e3862;
+  --rose: #b3413a;
   --display: "Fraunces", Georgia, serif;
   --body: "Karla", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;

@@ -77,10 +77,10 @@ export default function CoachDashboard({ rows }) {
 .c-table{width:100%;border-collapse:collapse;font-size:14px;min-width:720px}
 .c-table th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding:0 10px 10px;border-bottom:1px solid var(--edge)}
 .c-table td{padding:12px 10px;border-bottom:1px solid var(--edge)}
-.c-table tr.flagged{background:rgba(201,127,110,.08)}
-.c-table a{color:var(--gold);text-decoration:underline;text-underline-offset:3px}
-.mono{font-family:var(--mono);color:#CBD8DD}
-.flag{display:inline-block;background:var(--rose);color:#1A1206;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:2px 7px;border-radius:2px;margin-right:6px}
+.c-table tr.flagged{background:rgba(179,65,58,.08)}
+.c-table a{color:var(--sage);text-decoration:underline;text-underline-offset:3px}
+.mono{font-family:var(--mono);color:#4A4550}
+.flag{display:inline-block;background:var(--rose);color:#FFFFFF;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:2px 7px;border-radius:2px;margin-right:6px}
       `}</style>
     </div>
   );

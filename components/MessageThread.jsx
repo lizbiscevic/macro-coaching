@@ -72,7 +72,9 @@ export default function MessageThread({ leadId, role, initialMessages = [] }) {
 .thread-msg{max-width:80%;padding:8px 12px;border-radius:6px;background:var(--ink)}
 .thread-msg.mine{align-self:flex-end;background:var(--edge-lit)}
 .thread-who{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:2px}
+.thread-msg.mine .thread-who{color:rgba(255,255,255,.75)}
 .thread-msg p{margin:0;font-size:14px;line-height:1.4;color:var(--chalk)}
+.thread-msg.mine p{color:#FFFFFF}
 .thread-compose{display:flex;gap:8px;align-items:flex-end}
 .thread-compose textarea{flex:1;background:var(--ink);border:1px solid var(--edge);color:var(--chalk);font-family:var(--body);font-size:14px;padding:10px;border-radius:3px;resize:vertical}
 .thread-compose .cta.small{width:auto;padding:10px 16px}

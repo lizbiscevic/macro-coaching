@@ -73,7 +73,7 @@ function Styles() {
 .mark{font-family:var(--display);font-size:19px}
 .msg{color:var(--mute);font-size:14.5px;line-height:1.5;margin:0}
 .txt{background:var(--ink);border:1px solid var(--edge);color:var(--chalk);font-size:15px;padding:12px;border-radius:3px;width:100%}
-.cta{background:var(--gold);color:#1A1206;border:0;border-radius:3px;padding:14px;font-weight:700;font-size:15px;cursor:pointer}
+.cta{background:var(--gold);color:#FFFFFF;border:0;border-radius:3px;padding:14px;font-weight:700;font-size:15px;cursor:pointer}
 .err{color:var(--rose);font-size:13.5px;margin:0}
     `}</style>
   );

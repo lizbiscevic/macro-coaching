@@ -141,8 +141,8 @@ function Styles() {
 .hist{width:100%;border-collapse:collapse;font-size:14px}
 .hist th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding:0 10px 10px;border-bottom:1px solid var(--edge)}
 .hist td{padding:10px;border-bottom:1px solid var(--edge)}
-.mono{font-family:var(--mono);color:#CBD8DD}
-.cta{background:var(--gold);color:#1A1206;border:0;border-radius:3px;padding:14px 20px;font-weight:700;font-size:14px;cursor:pointer}
+.mono{font-family:var(--mono);color:#4A4550}
+.cta{background:var(--gold);color:#FFFFFF;border:0;border-radius:3px;padding:14px 20px;font-weight:700;font-size:14px;cursor:pointer}
 .cta:disabled{opacity:.6;cursor:default}
     `}</style>
   );
