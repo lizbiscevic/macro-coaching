@@ -704,16 +704,6 @@ function Checkout({ plan, tier, leadId, startDate, onPaid, onBack }) {
             <span>Goal date</span>
             <span className="mono">{fmtShort(end)}</span>
           </div>
-          <div className="co-line sm">
-            <span>First week</span>
-            <span className="mono">Baseline</span>
-          </div>
-
-          <div className="co-rule" />
-          <p className="co-note">
-            You already know your end date. That's the whole point — you're buying a plan
-            with a finish line, not a subscription that needs you to stay.
-          </p>
         </aside>
       </div>
     </section>
@@ -917,7 +907,6 @@ footer p{font-size:12px;color:var(--mute);line-height:1.6;margin:0}
 .co-line.sm .mono{color:var(--chalk)}
 .co-cad{font-family:var(--mono);font-size:11px;color:var(--sage);margin:4px 0 0}
 .co-rule{height:1px;background:var(--edge);margin:18px 0}
-.co-note{font-size:13px;color:var(--mute);margin:0;line-height:1.5}
 
 @media (max-width:720px){
   .co-grid{grid-template-columns:1fr}
