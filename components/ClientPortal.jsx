@@ -39,10 +39,8 @@ export default function ClientPortal({ lead, checkins, initialMessages, bookingU
         </button>
       </header>
 
-      <CheckIn lead={lead} plan={plan} currentWeek={currentWeek} totalWeeks={totalWeeks} existing={existing} />
-
       {lead.tier && lead.tier !== "diy" && bookingUrl && (
-        <section className="booking">
+        <section className="booking booking-lead">
           <p className="eyebrow center">Your monthly call</p>
           <h2 className="ph2">Book time with me.</h2>
           <div className="booking-frame">
@@ -50,6 +48,8 @@ export default function ClientPortal({ lead, checkins, initialMessages, bookingU
           </div>
         </section>
       )}
+
+      <CheckIn lead={lead} plan={plan} currentWeek={currentWeek} totalWeeks={totalWeeks} existing={existing} />
 
       <section className="messages">
         <p className="eyebrow center">Message me</p>
@@ -307,6 +307,7 @@ function Styles() {
 .attrib{font-family:var(--mono) !important;font-size:10px !important;color:var(--mute) !important;letter-spacing:.08em;margin:14px 0 0 !important;text-align:right}
 
 .booking{max-width:700px;margin:60px auto 0}
+.booking.booking-lead{margin-top:50px}
 .booking-frame{border:1px solid var(--edge);border-radius:4px;overflow:hidden;background:var(--tide)}
 .booking-frame iframe{width:100%;height:680px;border:0;display:block}
 
