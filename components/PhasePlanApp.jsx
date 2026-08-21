@@ -167,17 +167,15 @@ export default function PhasePlanApp() {
     }
   };
 
+  const ready = () => {
+    setStep("pricing");
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 60);
+  };
+
   const choose = (t) => {
     setTier(t);
     setStep("checkout");
     save({ leadId, form, startDate, tier: t, paid: false });
-    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 60);
-  };
-
-  const paid = (em) => {
-    if (em) setEmail(em);
-    setStep("start");
-    save({ leadId, form, startDate, tier, paid: true });
     setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 60);
   };
 
@@ -298,7 +296,7 @@ export default function PhasePlanApp() {
               setStartDate(d);
               save({ leadId, form, startDate: d, tier: null, paid: false });
             }}
-            onReady={() => setStep("pricing")}
+            onReady={ready}
           />
         </div>
       )}
@@ -311,7 +309,6 @@ export default function PhasePlanApp() {
           tier={tier}
           leadId={leadId}
           startDate={startDate}
-          onPaid={paid}
           onBack={() => setStep("pricing")}
         />
       )}
@@ -479,26 +476,16 @@ function PlanView({ plan, startDate, onStartDateChange, onReady }) {
         ))}
       </div>
 
-      <div className="stats">
-        <Stat k="Maintenance now" v={`${plan.tdee}`} u="cal" />
-        <Stat k={plan.losing ? "Deficit calories" : "Surplus calories"} v={`${plan.cutCals}`} u="cal" />
-        <Stat k="Rate" v={plan.weeklyLbs.toFixed(2)} u="lb / wk" />
-        <Stat k="Maintenance at goal" v={`${plan.goalTdee}`} u="cal" />
-      </div>
-
       {plan.losing && (
         <div className="why">
           <h3>Why it isn't just {plan.dietingWeeks} weeks</h3>
           <p>
             The deficit is {plan.dietingWeeks} weeks. Then there's the reverse — {plan.reverseWeeks} weeks
-            of walking calories back up, roughly 75 a week, until you're eating around{" "}
-            {plan.goalTdee} again without regaining. Skip it and you finish the hard part
-            eating {plan.cutCals} calories with a body primed to store everything. That's
-            the part where people gain it back, and it's the part nobody puts on the sales page.
+            of walking calories back up, roughly 75 a week, until you're back to eating like a
+            normal person again without regaining. Skip it and you finish the hard part deep
+            in a deficit with a body primed to store everything. That's the part where people
+            gain it back, and it's the part nobody puts on the sales page.
           </p>
-          {plan.notes.map((n, i) => (
-            <p className="note" key={i}>{n}</p>
-          ))}
         </div>
       )}
 
@@ -507,16 +494,6 @@ function PlanView({ plan, startDate, onStartDateChange, onReady }) {
       </button>
       <p className="micro">Let's start your macro journey!</p>
     </section>
-  );
-}
-
-function Stat({ k, v, u }) {
-  return (
-    <div className="stat">
-      <span className="s-k">{k}</span>
-      <span className="s-v">{v}</span>
-      <span className="s-u">{u}</span>
-    </div>
   );
 }
 
@@ -609,7 +586,7 @@ function Pricing({ plan, onChoose, onBack }) {
   );
 }
 
-function Checkout({ plan, tier, leadId, startDate, onPaid, onBack }) {
+function Checkout({ plan, tier, leadId, startDate, onBack }) {
   const [c, setC] = useState({ name: "", email: "", agree: false });
   const [err, setErr] = useState("");
   const [going, setGoing] = useState(false);
@@ -636,6 +613,8 @@ function Checkout({ plan, tier, leadId, startDate, onPaid, onBack }) {
       }).catch(() => {});
     }
 
+    // Payment is mandatory — a failure here always stops and shows an error,
+    // never lets someone through unpaid. There is no demo-mode fallback.
     try {
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
@@ -649,11 +628,11 @@ function Checkout({ plan, tier, leadId, startDate, onPaid, onBack }) {
         window.location.href = data.url;
         return;
       }
+      setErr("Checkout isn't available right now — message me directly and I'll get you sorted.");
     } catch (e) {
-      // fall through to demo mode below
+      setErr("That didn't go through — check your connection and try again.");
     }
     setGoing(false);
-    onPaid(c.email);
   };
 
   return (
@@ -867,16 +846,9 @@ function Styles() {
 .led-dates,.led-weeks{font-family:var(--mono);font-size:12px;color:var(--mute)}
 .led-weeks{width:38px;text-align:right}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--edge);border:1px solid var(--edge);margin-bottom:34px}
-.stat{background:var(--tide);padding:16px}
-.s-k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
-.s-v{display:block;font-family:var(--display);font-size:30px;font-weight:600;margin-top:6px;line-height:1}
-.s-u{font-family:var(--mono);font-size:11px;color:var(--mute)}
-
 .why{background:var(--tide);border-left:2px solid var(--sage);padding:22px 24px}
 .why h3{font-family:var(--display);font-size:22px;font-weight:600;margin:0 0 12px}
 .why p{margin:0 0 12px;font-size:15px;color:#4A4550}
-.note{font-family:var(--mono);font-size:12px;color:var(--sage)}
 
 /* pricing */
 .pricing{max-width:1000px;margin:70px auto 0}
