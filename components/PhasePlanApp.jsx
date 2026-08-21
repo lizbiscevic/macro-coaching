@@ -199,31 +199,7 @@ export default function PhasePlanApp() {
 
       {step === "calc" || step === "plan" ? (
         <>
-          <section className="hero">
-            <h1>Start here.</h1>
-            <p className="hero-sub">
-              Let's talk about <em>realistic</em> goals.
-            </p>
-            <div className="lede">
-              <p>
-                So much of this industry sells you ambiguity. Big feelings, lots of
-                optimism, no actual end in sight — and that's not an accident. The longer
-                you need a coach, the more that coach makes. It's a business model, and
-                it works best when you never quite arrive.
-              </p>
-              <p>
-                That's not what I'm selling. I want you to hit your goal and then get on
-                with your life at a weight you can actually hold. Not six months of eating
-                like a bird followed by a flip right back to where you started, plus
-                interest.
-              </p>
-              <p>
-                So we start with your goals. I'll tell you exactly when you can expect to
-                be there — and then how to train your metabolism to eat <em>more</em> while
-                you keep the result. <ReverseLink />
-              </p>
-            </div>
-          </section>
+          <Hero />
 
           <section className="whyme">
             <p className="eyebrow center">Why work with me</p>
@@ -355,6 +331,40 @@ export default function PhasePlanApp() {
 }
 
 /* ---------------------------- pieces ---------------------------- */
+
+function Hero() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="hero">
+      <h1>Start here.</h1>
+      <p className="hero-sub">
+        Let's talk about <em>realistic</em> goals.
+      </p>
+      <div className={"lede " + (open ? "open" : "")}>
+        <p>
+          So much of this industry sells you ambiguity. Big feelings, lots of
+          optimism, no actual end in sight — and that's not an accident. The longer
+          you need a coach, the more that coach makes. It's a business model, and
+          it works best when you never quite arrive.
+        </p>
+        <p>
+          That's not what I'm selling. I want you to hit your goal and then get on
+          with your life at a weight you can actually hold. Not six months of eating
+          like a bird followed by a flip right back to where you started, plus
+          interest.
+        </p>
+        <p>
+          So we start with your goals. I'll tell you exactly when you can expect to
+          be there — and then how to train your metabolism to eat <em>more</em> while
+          you keep the result. <ReverseLink />
+        </p>
+      </div>
+      <button className="hero-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {open ? "Show less −" : "Read more +"}
+      </button>
+    </section>
+  );
+}
 
 function ReverseLink() {
   const [open, setOpen] = useState(false);
@@ -795,6 +805,7 @@ function Styles() {
 .lede p:last-child{margin-bottom:0}
 .lede em{font-style:italic;color:var(--chalk);font-weight:500}
 .lede.center{margin:0 auto 30px;text-align:center}
+.hero-toggle{display:none}
 
 .whyme{max-width:760px;margin:10px auto 0;padding-top:38px;border-top:1px solid var(--edge)}
 
@@ -916,6 +927,9 @@ footer p{font-size:12px;color:var(--mute);line-height:1.6;margin:0}
   .hero{padding:36px 0 26px}
   .card{padding:20px}
   .row{gap:12px}
+  .hero .lede{max-height:80px;overflow:hidden;position:relative;-webkit-mask-image:linear-gradient(to bottom,#000 50%,transparent 100%);mask-image:linear-gradient(to bottom,#000 50%,transparent 100%)}
+  .hero .lede.open{max-height:none;-webkit-mask-image:none;mask-image:none}
+  .hero-toggle{display:block;background:none;border:0;padding:0;margin-top:14px;font-family:var(--body);font-size:14px;font-weight:600;color:var(--sage);cursor:pointer}
 }
     `}</style>
   );

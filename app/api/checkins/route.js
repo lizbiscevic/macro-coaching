@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getLeadForUser } from "@/lib/leads";
+import { isCheckinComplete } from "@/lib/plan";
 
 /* ------------------------------------------------------------------
    A client's own weekly check-ins only — the lead is resolved from
@@ -40,17 +41,32 @@ export async function POST(req) {
   const { weekNumber, weighIn, calories, mymacrosEmail } = body || {};
   if (!weekNumber) return NextResponse.json({ error: "weekNumber required" }, { status: 400 });
 
-  const { error } = await supabaseAdmin.from("checkins").upsert(
-    {
-      lead_id: lead.id,
-      week_number: weekNumber,
-      weigh_in: weighIn ?? null,
-      calories: calories ?? null,
-      mymacros_email: mymacrosEmail ?? null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "lead_id,week_number" }
-  );
+  const row = {
+    lead_id: lead.id,
+    week_number: weekNumber,
+    weigh_in: weighIn ?? null,
+    calories: calories ?? null,
+    mymacros_email: mymacrosEmail ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabaseAdmin.from("checkins").upsert(row, { onConflict: "lead_id,week_number" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // DIY has no coach setting a plan by hand — the moment baseline week is
+  // done, generate it automatically and let them know, once.
+  if (lead.tier === "diy" && weekNumber === 1 && !lead.plan_notified_at && isCheckinComplete(row)) {
+    await supabaseAdmin
+      .from("leads")
+      .update({ plan_notified_at: new Date().toISOString() })
+      .eq("id", lead.id)
+      .is("plan_notified_at", null);
+    await supabaseAdmin.from("messages").insert({
+      lead_id: lead.id,
+      sender: "coach",
+      body: "Your full plan's ready — check out Step 3 in your portal.",
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }

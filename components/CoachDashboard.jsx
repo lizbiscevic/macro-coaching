@@ -8,6 +8,12 @@ const FLAG_LABEL = {
   "wrong-direction": "Wrong direction 2wk",
 };
 
+const PLAN_LABEL = {
+  set: "Set",
+  "not-set": "Not set",
+  auto: "Auto",
+};
+
 export default function CoachDashboard({ rows }) {
   const signOut = async () => {
     if (supabaseBrowser) await supabaseBrowser.auth.signOut();
@@ -39,6 +45,7 @@ export default function CoachDashboard({ rows }) {
                 <th>Change</th>
                 <th>Avg cal (wk)</th>
                 <th>Checked in</th>
+                <th>Plan</th>
                 <th>Flags</th>
               </tr>
             </thead>
@@ -53,6 +60,7 @@ export default function CoachDashboard({ rows }) {
                   <td className="mono">{r.changeSinceLast != null ? (r.changeSinceLast > 0 ? "+" : "") + r.changeSinceLast : "—"}</td>
                   <td className="mono">{r.avgCaloriesThisWeek ?? "—"}</td>
                   <td className="mono">{r.checkedInThisWeek ? "yes" : "no"}</td>
+                  <td className="mono">{r.planStatus ? PLAN_LABEL[r.planStatus] || r.planStatus : "—"}</td>
                   <td>
                     {r.flags.map((f) => (
                       <span className="flag" key={f}>

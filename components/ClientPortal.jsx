@@ -1,18 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { computePlan, currentWeekNumber } from "@/lib/plan";
+import { computePlan, currentWeekNumber, isCheckinComplete, avgCalories, addWeeks, fmtShort } from "@/lib/plan";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import MessageThread from "@/components/MessageThread";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /* ------------------------------------------------------------------
-   Authenticated successor to the old WeekOne component. Week 1 keeps
-   the original "baseline — change nothing" framing; week 2+ is a
-   lighter recurring weekly check-in. Persists to Supabase via
-   /api/checkins instead of localStorage, and adds messaging + a
-   booking embed (m1/m3/m6 tiers only — DIY has no calls).
+   Authenticated client portal, laid out as a locked sequence: finish
+   week one, then booking your call and your plan both unlock. DIY has
+   no call step, so its plan is Step 2 instead of Step 3.
 -------------------------------------------------------------------*/
 
 export default function ClientPortal({ lead, checkins, initialMessages, bookingUrl }) {
@@ -20,6 +18,10 @@ export default function ClientPortal({ lead, checkins, initialMessages, bookingU
   const totalWeeks = plan.ok ? plan.totalWeeks : null;
   const currentWeek = totalWeeks ? currentWeekNumber(lead.start_date, totalWeeks) : 1;
   const existing = checkins.find((c) => c.week_number === currentWeek);
+  const week1 = checkins.find((c) => c.week_number === 1);
+  const unlocked = isCheckinComplete(week1);
+  const hasBooking = Boolean(lead.tier && lead.tier !== "diy");
+  const planStep = hasBooking ? 3 : 2;
 
   const signOut = async () => {
     if (supabaseBrowser) await supabaseBrowser.auth.signOut();
@@ -39,22 +41,141 @@ export default function ClientPortal({ lead, checkins, initialMessages, bookingU
         </button>
       </header>
 
-      {lead.tier && lead.tier !== "diy" && bookingUrl && (
-        <section className="booking booking-lead">
-          <p className="eyebrow center">Your monthly call</p>
-          <h2 className="ph2">Book time with me.</h2>
-          <div className="booking-frame">
-            <iframe src={bookingUrl} title="Book a call" loading="lazy" />
-          </div>
-        </section>
+      <section className="welcome">
+        <h1>Congratulations.</h1>
+        <p>
+          You just took the first step toward your goal, a better relationship with food, and
+          feeling good in your body again.
+        </p>
+        <p>
+          {hasBooking
+            ? "Here's how this works: finish week one below and your call and your plan both unlock. Book that call once you're done — that's when we walk through your plan together."
+            : "Here's how this works: finish week one below and your full plan unlocks, built off your real numbers."}{" "}
+          I'm around for a message any time in the meantime, no need to wait.
+        </p>
+      </section>
+
+      <StepHeader n={1} title={currentWeek === 1 ? "Change nothing. Just watch." : "Your weekly check-in."} />
+      <CheckIn lead={lead} plan={plan} currentWeek={currentWeek} totalWeeks={totalWeeks} existing={existing} />
+
+      {hasBooking && (
+        <>
+          <StepHeader n={2} title="Book your call" locked={!unlocked} />
+          {unlocked ? (
+            <section className="booking">
+              <div className="booking-frame">
+                <iframe src={bookingUrl} title="Book a call" loading="lazy" />
+              </div>
+            </section>
+          ) : (
+            <LockedCard note="Unlocks once you've logged at least 5 days and your weigh-in for week one." />
+          )}
+        </>
       )}
 
-      <CheckIn lead={lead} plan={plan} currentWeek={currentWeek} totalWeeks={totalWeeks} existing={existing} />
+      <StepHeader n={planStep} title="Your plan" locked={!unlocked} />
+      {unlocked ? (
+        <PlanSection lead={lead} formPlan={plan} week1={week1} />
+      ) : (
+        <LockedCard note="Unlocks once week one's done — that's when your plan is ready to land here." />
+      )}
 
       <section className="messages">
         <p className="eyebrow center">Message me</p>
         <MessageThread leadId={lead.id} role="client" initialMessages={initialMessages} />
       </section>
+    </div>
+  );
+}
+
+function StepHeader({ n, title, locked }) {
+  return (
+    <div className="step-head">
+      <p className="eyebrow center">
+        Step {n}
+        {locked ? " · locked" : ""}
+      </p>
+      <h2 className="ph2">{title}</h2>
+    </div>
+  );
+}
+
+function LockedCard({ note }) {
+  return (
+    <section className="locked-card">
+      <p>🔒 {note}</p>
+    </section>
+  );
+}
+
+function PlanSection({ lead, formPlan, week1 }) {
+  if (lead.tier === "diy") return <DiyPlan lead={lead} formPlan={formPlan} week1={week1} />;
+  return <CoachedPlan macroTargets={lead.macro_targets} />;
+}
+
+function CoachedPlan({ macroTargets }) {
+  if (!macroTargets) {
+    return (
+      <section className="plan-section">
+        <p className="lede center">
+          Your plan's being built — usually ready within a day. I'll message you the moment it's up.
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section className="plan-section">
+      <div className="stats">
+        <Stat k="Protein" v={macroTargets.protein} u="g" />
+        <Stat k="Carbs" v={macroTargets.carbs} u="g" />
+        <Stat k="Fat" v={macroTargets.fat} u="g" />
+      </div>
+    </section>
+  );
+}
+
+function DiyPlan({ lead, formPlan, week1 }) {
+  const realTdee = avgCalories(week1);
+  const plan = realTdee ? computePlan(lead.form || {}, { realTdee }) : formPlan;
+  if (!plan.ok) return <p className="lede center">Your plan will show up here once week one is in.</p>;
+
+  const start = new Date(lead.start_date + "T00:00:00");
+  const withDates = plan.phases.reduce((rows, p) => {
+    const priorWeeks = rows.length ? rows[rows.length - 1].weeksAcc : 0;
+    const weeksAcc = priorWeeks + p.weeks;
+    rows.push({ ...p, start: addWeeks(start, priorWeeks), end: addWeeks(start, weeksAcc), weeksAcc });
+    return rows;
+  }, []);
+
+  return (
+    <section className="plan-section">
+      <div className="stats">
+        <Stat k="Real maintenance" v={plan.tdee} u="cal" />
+        <Stat k={plan.losing ? "Deficit calories" : "Surplus calories"} v={plan.cutCals} u="cal" />
+        <Stat k="Rate" v={plan.weeklyLbs.toFixed(2)} u="lb / wk" />
+        <Stat k="Maintenance at goal" v={plan.goalTdee} u="cal" />
+      </div>
+      <div className="ledger">
+        {withDates.map((p) => (
+          <div className="led-row" key={p.key}>
+            <span className="led-label">{p.label}</span>
+            <span className="led-dates">
+              {fmtShort(p.start)} → {fmtShort(p.end)}
+            </span>
+            <span className="led-weeks">{p.weeks}w</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Stat({ k, v, u }) {
+  return (
+    <div className="stat">
+      <span className="s-k">{k}</span>
+      <span className="s-v">{v}</span>
+      <span className="s-u">{u}</span>
     </div>
   );
 }
@@ -100,7 +221,6 @@ function CheckIn({ lead, plan, currentWeek, totalWeeks, existing }) {
       <p className="eyebrow center">
         Week {currentWeek} of {totalWeeks || "—"}
       </p>
-      <h2 className="ph2">{isBaseline ? "Change nothing. Just watch." : "Your weekly check-in."}</h2>
 
       {isBaseline ? (
         <>
@@ -200,11 +320,11 @@ function CheckIn({ lead, plan, currentWeek, totalWeeks, existing }) {
 
       {isBaseline && (
         <div className={"unlock " + (complete ? "ready" : "")}>
-          <h3>{complete ? "Your targets are ready" : "Your targets unlock when this week is done"}</h3>
+          <h3>{complete ? "Nice — that unlocks the rest" : "5 days + your weigh-in unlocks the rest"}</h3>
           <p>
             {complete
-              ? `Your real maintenance is sitting around ${avgC} calories — not the ${plan?.tdee} the calculator guessed. That's the number your deficit gets built from. Your targets will show up right here, usually within a day.`
-              : `Fill in at least five days and your weigh-in, and I'll set your protein, fat, and carb targets off your real maintenance instead of an estimate — they'll land right here, not your inbox.`}
+              ? `Your real maintenance is sitting around ${avgC} calories — not the ${plan?.tdee} the calculator guessed. Your call and your plan are open below now.`
+              : `Fill in at least five days and your weigh-in, and your call booking and your plan both open up below — set from your real maintenance, not an estimate.`}
           </p>
         </div>
       )}
@@ -233,12 +353,6 @@ function CheckIn({ lead, plan, currentWeek, totalWeeks, existing }) {
         </div>
         <p className="attrib">Macros Powered by My Macros+</p>
       </div>
-
-      <p className="micro center">
-        {lead.tier === "diy"
-          ? "You're on the DIY plan — your full protocol is right here in your portal."
-          : "Your calls get booked from here — details show up in your portal, not your inbox."}
-      </p>
     </section>
   );
 }
@@ -254,12 +368,20 @@ function Styles() {
 .mark{font-family:var(--display);font-size:19px}
 .signout{background:none;border:0;color:var(--mute);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:0}
 
+.welcome{max-width:700px;margin:40px auto 0;text-align:center}
+.welcome h1{font-family:var(--display);font-weight:600;font-size:clamp(28px,5vw,40px);margin:0 0 16px;letter-spacing:-.02em}
+.welcome p{color:var(--mute);font-size:15.5px;line-height:1.6;max-width:56ch;margin:0 auto 10px}
+
+.step-head{max-width:700px;margin:56px auto 0}
 .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--sage);margin:0 0 14px}
 .eyebrow.center{text-align:center}
 .ph2{font-family:var(--display);font-weight:600;font-size:clamp(26px,4.5vw,38px);line-height:1.1;text-align:center;margin:0 auto 20px;max-width:20ch;letter-spacing:-.02em}
 .lede.center{color:var(--mute);max-width:56ch;margin:0 auto 30px;text-align:center;font-size:15.5px}
 
-.week1{max-width:700px;margin:50px auto 0}
+.locked-card{max-width:700px;margin:0 auto;background:var(--tide);border:1px dashed var(--edge-lit);border-radius:4px;padding:24px;text-align:center}
+.locked-card p{margin:0;color:var(--mute);font-size:14.5px}
+
+.week1{max-width:700px;margin:0 auto}
 .rules{counter-reset:r;list-style:none;padding:0;margin:0 0 34px}
 .rules li{counter-increment:r;position:relative;padding-left:40px;margin-bottom:18px;font-size:15px;color:#4A4550;line-height:1.5}
 .rules li:before{content:counter(r,decimal-leading-zero);position:absolute;left:0;top:1px;font-family:var(--mono);font-size:12px;color:var(--sage)}
@@ -289,8 +411,6 @@ function Styles() {
 
 .cta{width:100%;background:var(--gold);color:#FFFFFF;border:0;border-radius:3px;padding:16px;font-family:var(--body);font-weight:700;font-size:15px;cursor:pointer}
 .problem{color:var(--rose);font-size:14px;margin:16px 0 0}
-.micro{font-family:var(--mono);font-size:11px;color:var(--mute);text-align:center;margin:12px 0 0}
-.micro.center{margin-top:26px}
 
 .unlock{margin-top:30px;border:1px dashed var(--edge-lit);border-radius:4px;padding:20px}
 .unlock.ready{border-style:solid;border-color:var(--sage);background:#E3FBF7}
@@ -306,12 +426,22 @@ function Styles() {
 .txt{background:var(--ink);border:1px solid var(--edge);color:var(--chalk);font-size:15px;padding:12px;border-radius:3px;width:100%}
 .attrib{font-family:var(--mono) !important;font-size:10px !important;color:var(--mute) !important;letter-spacing:.08em;margin:14px 0 0 !important;text-align:right}
 
-.booking{max-width:700px;margin:60px auto 0}
-.booking.booking-lead{margin-top:50px}
+.booking{max-width:700px;margin:0 auto}
 .booking-frame{border:1px solid var(--edge);border-radius:4px;overflow:hidden;background:var(--tide)}
 .booking-frame iframe{width:100%;height:680px;border:0;display:block}
 
-.messages{max-width:700px;margin:60px auto 0}
+.plan-section{max-width:700px;margin:0 auto}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--edge);border:1px solid var(--edge);margin-bottom:20px}
+.stat{background:var(--tide);padding:16px}
+.s-k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.s-v{display:block;font-family:var(--display);font-size:30px;font-weight:600;margin-top:6px;line-height:1}
+.s-u{font-family:var(--mono);font-size:11px;color:var(--mute)}
+.ledger{border-top:1px solid var(--edge)}
+.led-row{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--edge);font-size:14px}
+.led-label{flex:1}
+.led-dates,.led-weeks{font-family:var(--mono);font-size:12px;color:var(--mute)}
+
+.messages{max-width:700px;margin:56px auto 0}
 
 @media (max-width:560px){
   .cal-grid{grid-template-columns:repeat(4,1fr)}

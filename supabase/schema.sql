@@ -31,6 +31,12 @@ alter table leads add column if not exists user_id uuid references auth.users(id
 create index if not exists leads_user_id_idx on leads(user_id);
 create index if not exists leads_email_idx on leads(email);
 
+-- Coach-set macro targets (coached tiers only — DIY's plan is computed on
+-- the fly, never stored). plan_notified_at guards the one-time "your plan
+-- is ready" auto-message so re-saving/editing doesn't re-notify.
+alter table leads add column if not exists macro_targets jsonb;
+alter table leads add column if not exists plan_notified_at timestamptz;
+
 -- One row per client per week. `unique(lead_id, week_number)` makes a
 -- check-in a natural upsert target and "did they check in this week" a
 -- direct row-presence check.

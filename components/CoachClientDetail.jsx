@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { computePlan, addWeeks, fmtShort, currentWeekNumber } from "@/lib/plan";
+import { computePlan, addWeeks, fmtShort, currentWeekNumber, isCheckinComplete, avgCalories } from "@/lib/plan";
 import MessageThread from "@/components/MessageThread";
 
 export default function CoachClientDetail({ lead, checkins, initialMessages }) {
   const plan = computePlan(lead.form || {});
   const currentWeek = plan.ok ? currentWeekNumber(lead.start_date, plan.totalWeeks) : null;
+  const week1 = checkins.find((c) => c.week_number === 1);
 
   return (
     <div className="detail">
@@ -45,7 +46,7 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
                   <tr key={c.id}>
                     <td className="mono">{c.week_number}</td>
                     <td className="mono">{c.weigh_in ?? "—"}</td>
-                    <td className="mono">{avgOf(c.calories)}</td>
+                    <td className="mono">{avgCalories(c) ?? "—"}</td>
                     <td className="mono">{c.mymacros_email || "—"}</td>
                   </tr>
                 ))}
@@ -53,6 +54,8 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
             </table>
           )}
         </section>
+
+        <PlanBlock lead={lead} week1={week1} />
 
         <BookingPrompt leadId={lead.id} />
 
@@ -65,10 +68,118 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
   );
 }
 
-function avgOf(calories) {
-  if (!calories) return "—";
-  const nums = calories.filter((n) => typeof n === "number" && !Number.isNaN(n));
-  return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : "—";
+function PlanBlock({ lead, week1 }) {
+  if (lead.tier === "diy") return <DiyPlanReadOnly lead={lead} week1={week1} />;
+  return <SetPlanForm leadId={lead.id} macroTargets={lead.macro_targets} />;
+}
+
+function SetPlanForm({ leadId, macroTargets }) {
+  const [protein, setProtein] = useState(macroTargets?.protein ?? "");
+  const [carbs, setCarbs] = useState(macroTargets?.carbs ?? "");
+  const [fat, setFat] = useState(macroTargets?.fat ?? "");
+  const [status, setStatus] = useState("idle"); // idle | saving | saved | error
+
+  const save = async () => {
+    setStatus("saving");
+    try {
+      const res = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId,
+          protein: protein ? Number(protein) : null,
+          carbs: carbs ? Number(carbs) : null,
+          fat: fat ? Number(fat) : null,
+        }),
+      });
+      setStatus(res.ok ? "saved" : "error");
+    } catch (e) {
+      setStatus("error");
+    }
+  };
+
+  return (
+    <section className="block">
+      <h2>{macroTargets ? "Client's plan" : "Set client's plan"}</h2>
+      <div className="plan-form">
+        <label className="pf-field">
+          <span>Protein (g)</span>
+          <input
+            type="number"
+            value={protein}
+            onChange={(e) => {
+              setProtein(e.target.value);
+              setStatus("idle");
+            }}
+          />
+        </label>
+        <label className="pf-field">
+          <span>Carbs (g)</span>
+          <input
+            type="number"
+            value={carbs}
+            onChange={(e) => {
+              setCarbs(e.target.value);
+              setStatus("idle");
+            }}
+          />
+        </label>
+        <label className="pf-field">
+          <span>Fat (g)</span>
+          <input
+            type="number"
+            value={fat}
+            onChange={(e) => {
+              setFat(e.target.value);
+              setStatus("idle");
+            }}
+          />
+        </label>
+      </div>
+      <button className="cta" onClick={save} disabled={status === "saving"}>
+        {status === "saving" ? "Saving…" : macroTargets ? "Update plan" : "Save plan"}
+      </button>
+      {status === "saved" && <p className="hint">Saved — the client's been messaged that it's ready.</p>}
+      {status === "error" && <p className="problem">That didn't save — try again.</p>}
+    </section>
+  );
+}
+
+function DiyPlanReadOnly({ lead, week1 }) {
+  const ready = isCheckinComplete(week1);
+  if (!ready) {
+    return (
+      <section className="block">
+        <h2>Client's plan</h2>
+        <p className="empty">Not generated yet — unlocks once their week one is done.</p>
+      </section>
+    );
+  }
+
+  const realTdee = avgCalories(week1);
+  const plan = computePlan(lead.form || {}, { realTdee });
+  if (!plan.ok) return null;
+
+  return (
+    <section className="block">
+      <h2>Client's plan (auto-generated)</h2>
+      <div className="stats">
+        <Stat k="Real maintenance" v={plan.tdee} u="cal" />
+        <Stat k={plan.losing ? "Deficit calories" : "Surplus calories"} v={plan.cutCals} u="cal" />
+        <Stat k="Rate" v={plan.weeklyLbs.toFixed(2)} u="lb / wk" />
+      </div>
+    </section>
+  );
+}
+
+function Stat({ k, v, u }) {
+  return (
+    <div className="stat">
+      <span className="s-k">{k}</span>
+      <span className="s-v">{v}</span>
+      <span className="s-u">{u}</span>
+    </div>
+  );
 }
 
 function Timeline({ lead, plan }) {
@@ -144,6 +255,22 @@ function Styles() {
 .mono{font-family:var(--mono);color:#4A4550}
 .cta{background:var(--gold);color:#FFFFFF;border:0;border-radius:3px;padding:14px 20px;font-weight:700;font-size:14px;cursor:pointer}
 .cta:disabled{opacity:.6;cursor:default}
+.hint{font-size:13px;color:var(--sage);margin:10px 0 0}
+.problem{font-size:13px;color:var(--rose);margin:10px 0 0}
+
+.plan-form{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;max-width:420px}
+.pf-field{display:flex;flex-direction:column;gap:6px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.pf-field input{background:var(--ink);border:1px solid var(--edge);color:var(--chalk);font-family:var(--body);font-size:15px;padding:10px;border-radius:3px;width:100%}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--edge);border:1px solid var(--edge)}
+.stat{background:var(--tide);padding:16px}
+.s-k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.s-v{display:block;font-family:var(--display);font-size:26px;font-weight:600;margin-top:6px;line-height:1}
+.s-u{font-family:var(--mono);font-size:11px;color:var(--mute)}
+
+@media (max-width:480px){
+  .plan-form{grid-template-columns:1fr}
+}
     `}</style>
   );
 }
