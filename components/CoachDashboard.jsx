@@ -14,7 +14,13 @@ const PLAN_LABEL = {
   auto: "Auto",
 };
 
-export default function CoachDashboard({ rows }) {
+const MYMACROS_NOTICE = {
+  connected: { tone: "ok", text: "My Macros+ connected." },
+  error: { tone: "err", text: "Something went wrong connecting My Macros+ — try again." },
+  not_configured: { tone: "err", text: "My Macros+ isn't configured yet (missing client ID/secret)." },
+};
+
+export default function CoachDashboard({ rows, mymacrosConnected, mymacrosNotice }) {
   const signOut = async () => {
     if (supabaseBrowser) await supabaseBrowser.auth.signOut();
     // Hard navigation, not router.push — this clears client state and lets
@@ -22,6 +28,8 @@ export default function CoachDashboard({ rows }) {
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = "/";
   };
+
+  const notice = MYMACROS_NOTICE[mymacrosNotice];
 
   return (
     <div className="coach">
@@ -33,6 +41,18 @@ export default function CoachDashboard({ rows }) {
       </header>
 
       <main className="c-main">
+        <div className="mm-status">
+          <span className={mymacrosConnected ? "mm-ok" : "mm-off"}>
+            {mymacrosConnected ? "My Macros+ connected" : "My Macros+ not connected"}
+          </span>
+          {!mymacrosConnected && (
+            <a className="mm-connect" href="/api/mymacros/connect">
+              Connect My Macros+
+            </a>
+          )}
+        </div>
+        {notice && <p className={`mm-notice mm-notice-${notice.tone}`}>{notice.text}</p>}
+
         {rows.length === 0 && <p className="empty">No paid clients yet.</p>}
 
         {rows.length > 0 && (
@@ -82,6 +102,13 @@ export default function CoachDashboard({ rows }) {
 .signout{background:none;border:0;color:var(--mute);font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:0}
 .c-main{max-width:1100px;margin:0 auto;padding:30px 20px 80px;overflow-x:auto}
 .empty{color:var(--mute);font-size:14px}
+.mm-status{display:flex;align-items:center;gap:14px;margin-bottom:8px;font-family:var(--mono);font-size:12px}
+.mm-ok{color:var(--sage)}
+.mm-off{color:var(--mute)}
+.mm-connect{color:var(--gold);text-decoration:underline;text-underline-offset:3px}
+.mm-notice{font-family:var(--mono);font-size:12px;margin:0 0 22px}
+.mm-notice-ok{color:var(--sage)}
+.mm-notice-err{color:var(--rose)}
 .c-table{width:100%;border-collapse:collapse;font-size:14px;min-width:720px}
 .c-table th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding:0 10px 10px;border-bottom:1px solid var(--edge)}
 .c-table td{padding:12px 10px;border-bottom:1px solid var(--edge)}

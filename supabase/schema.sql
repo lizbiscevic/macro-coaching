@@ -66,3 +66,17 @@ create table if not exists messages (
 );
 alter table messages enable row level security;
 create index if not exists messages_lead_id_idx on messages(lead_id, created_at);
+
+-- My Macros+ OAuth connection — coach-level, one row ever (the check
+-- constraint enforces the singleton). Liz authorizes once; the app then
+-- has a refreshable token pair to call the My Macros+ API on her behalf.
+create table if not exists mymacros_connection (
+  id int primary key default 1,
+  access_token text,
+  refresh_token text,
+  expires_at timestamptz,
+  mymacros_user_id text,
+  updated_at timestamptz not null default now(),
+  constraint mymacros_connection_singleton check (id = 1)
+);
+alter table mymacros_connection enable row level security;

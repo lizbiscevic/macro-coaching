@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isCoach } from "@/lib/isCoach";
-import { pushMacroTargets } from "@/lib/mymacros";
 
 /* ------------------------------------------------------------------
    Coach-only: sets a coached-tier client's protein/carb/fat targets.
-   First save auto-messages the client and (best-effort) pushes the
-   targets to My Macros+ if they've connected an account; later edits
-   just update the numbers without re-notifying or re-pushing.
+   First save auto-messages the client; later edits just update the
+   numbers without re-notifying. Pushing targets to My Macros+ isn't
+   wired up yet — their update endpoint's OAuth support isn't finished
+   on their end (per their team, Aug 2026).
 -------------------------------------------------------------------*/
 
 export async function POST(req) {
@@ -45,21 +45,6 @@ export async function POST(req) {
       sender: "coach",
       body: "Your plan is ready — check it out in Step 3 of your portal.",
     });
-  }
-
-  const { data: latestCheckin } = await supabaseAdmin
-    .from("checkins")
-    .select("mymacros_email")
-    .eq("lead_id", leadId)
-    .not("mymacros_email", "is", null)
-    .order("week_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latestCheckin?.mymacros_email) {
-    // Awaited, not fire-and-forget — a serverless function can be frozen
-    // right after the response is sent, which would kill an unawaited call.
-    await pushMacroTargets(latestCheckin.mymacros_email, macroTargets);
   }
 
   return NextResponse.json({ ok: true });
