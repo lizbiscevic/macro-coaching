@@ -543,6 +543,7 @@ function Pricing({ plan, onChoose, onBack }) {
       line: `Covers the deficit and the reverse.`,
       items: [
         "A tailored plan customized for you",
+        "One call every month",
         "Maintenance plan when you land",
         "Best per-month rate",
       ],
