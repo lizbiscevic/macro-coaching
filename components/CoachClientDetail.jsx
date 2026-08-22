@@ -10,6 +10,18 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
   const currentWeek = plan.ok ? currentWeekNumber(lead.start_date, plan.totalWeeks) : null;
   const week1 = checkins.find((c) => c.week_number === 1);
 
+  const weighed = checkins.filter((c) => typeof c.weigh_in === "number").sort((a, b) => a.week_number - b.week_number);
+  const latestWeight = weighed[weighed.length - 1]?.weigh_in ?? null;
+  const startWeight = lead.form?.weight ? Number(lead.form.weight) : null;
+  const goalWeight = lead.form?.goal ? Number(lead.form.goal) : null;
+  const progress = latestWeight != null && startWeight != null ? +(latestWeight - startWeight).toFixed(1) : null;
+
+  const calTrend = checkins
+    .map((c) => ({ week: c.week_number, value: avgCalories(c) }))
+    .filter((p) => p.value != null)
+    .sort((a, b) => a.week - b.week);
+  const weightTrend = weighed.map((c) => ({ week: c.week_number, value: c.weigh_in }));
+
   return (
     <div className="detail">
       <Styles />
@@ -25,6 +37,25 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
       </header>
 
       <main className="d-main">
+        {(startWeight != null || goalWeight != null) && (
+          <div className="stats">
+            <Stat k="Starting weight" v={startWeight ?? "—"} u="lb" />
+            <Stat k="Goal weight" v={goalWeight ?? "—"} u="lb" />
+            <Stat k="Current weight" v={latestWeight ?? "—"} u="lb" />
+            <Stat k="Progress so far" v={progress != null ? (progress > 0 ? `+${progress}` : progress) : "—"} u="lb" />
+          </div>
+        )}
+
+        {(weightTrend.length >= 2 || calTrend.length >= 2) && (
+          <section className="block">
+            <h2>Progress</h2>
+            <div className="charts">
+              {weightTrend.length >= 2 && <TrendChart title="Weight" data={weightTrend} unit="lb" color="var(--sage)" />}
+              {calTrend.length >= 2 && <TrendChart title="Avg calories" data={calTrend} unit="cal" color="var(--gold)" />}
+            </div>
+          </section>
+        )}
+
         {plan.ok && <Timeline lead={lead} plan={plan} />}
 
         <section className="block">
@@ -182,6 +213,72 @@ function Stat({ k, v, u }) {
   );
 }
 
+function TrendChart({ title, data, unit, color }) {
+  const [hover, setHover] = useState(null);
+  const width = 520;
+  const height = 160;
+  const pad = { top: 16, right: 16, bottom: 24, left: 16 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+
+  const weeks = data.map((d) => d.week);
+  const values = data.map((d) => d.value);
+  const minWeek = Math.min(...weeks);
+  const maxWeek = Math.max(...weeks);
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+  const valPad = (maxVal - minVal) * 0.15 || Math.max(1, Math.abs(maxVal) * 0.05);
+  const lo = minVal - valPad;
+  const hi = maxVal + valPad;
+
+  const x = (w) => pad.left + (maxWeek === minWeek ? innerW / 2 : ((w - minWeek) / (maxWeek - minWeek)) * innerW);
+  const y = (v) => pad.top + innerH - ((v - lo) / (hi - lo || 1)) * innerH;
+
+  const points = data.map((d) => ({ ...d, cx: x(d.week), cy: y(d.value) }));
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.cx},${p.cy}`).join(" ");
+  const gridY = [0, 0.5, 1].map((t) => pad.top + innerH * t);
+  const latest = data[data.length - 1];
+
+  return (
+    <div className="chart">
+      <div className="chart-head">
+        <span className="chart-title">{title}</span>
+        <span className="chart-latest">
+          {latest.value}
+          <span className="chart-unit">{unit}</span>
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="chart-svg" onMouseLeave={() => setHover(null)}>
+        {gridY.map((gy, i) => (
+          <line key={i} x1={pad.left} x2={width - pad.right} y1={gy} y2={gy} className="chart-grid" />
+        ))}
+        <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.cx} cy={p.cy} r="3.5" fill={color} />
+            <circle cx={p.cx} cy={p.cy} r="10" fill="transparent" onMouseEnter={() => setHover(i)} style={{ cursor: "pointer" }} />
+          </g>
+        ))}
+        <text x={pad.left} y={height - 6} className="chart-axis">
+          wk {minWeek}
+        </text>
+        <text x={width - pad.right} y={height - 6} textAnchor="end" className="chart-axis">
+          wk {maxWeek}
+        </text>
+      </svg>
+      {hover != null && (
+        <div
+          className="chart-tip"
+          style={{ left: `${(points[hover].cx / width) * 100}%`, top: `${(points[hover].cy / height) * 100}%` }}
+        >
+          Week {points[hover].week}: {points[hover].value}
+          {unit}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Timeline({ lead, plan }) {
   const start = new Date(lead.start_date + "T00:00:00");
   const withDates = plan.phases.reduce((rows, p) => {
@@ -267,6 +364,17 @@ function Styles() {
 .s-k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
 .s-v{display:block;font-family:var(--display);font-size:26px;font-weight:600;margin-top:6px;line-height:1}
 .s-u{font-family:var(--mono);font-size:11px;color:var(--mute)}
+
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.chart{background:var(--tide);border:1px solid var(--edge);border-radius:4px;padding:16px;position:relative}
+.chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.chart-title{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.chart-latest{font-family:var(--display);font-size:20px;font-weight:600}
+.chart-unit{font-family:var(--mono);font-size:11px;color:var(--mute);margin-left:4px;font-weight:400}
+.chart-svg{width:100%;height:auto;display:block}
+.chart-grid{stroke:var(--edge);stroke-width:1}
+.chart-axis{font-family:var(--mono);font-size:9px;fill:var(--mute)}
+.chart-tip{position:absolute;transform:translate(-50%,-130%);background:var(--chalk);color:var(--ink);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:3px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.15)}
 
 @media (max-width:480px){
   .plan-form{grid-template-columns:1fr}
