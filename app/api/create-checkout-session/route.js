@@ -34,6 +34,7 @@ export async function POST(req) {
     const session = await stripe.checkout.sessions.create({
       mode: SUBSCRIPTION_TIERS.has(tier) ? "subscription" : "payment",
       line_items: [{ price: priceId, quantity: 1 }],
+      allow_promotion_codes: true,
       customer_email: email,
       client_reference_id: leadId,
       success_url: `${siteUrl}/?session_id={CHECKOUT_SESSION_ID}`,
