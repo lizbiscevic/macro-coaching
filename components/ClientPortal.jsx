@@ -6,6 +6,16 @@ import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import MessageThread from "@/components/MessageThread";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const SUPPORT_EMAIL = "hello@yourmacrojourney.com";
+
+// A ready-to-send fallback for "this broke" moments — clients won't have
+// Liz's phone number, so the recovery path is always email, pre-filled so
+// there's nothing to type beyond attaching whatever the instruction asks for.
+function supportMailto(subject, instruction = "Screenshot attached.") {
+  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
+    `Hey Liz — this didn't work for me. ${instruction}\n\n`
+  )}`;
+}
 
 /* ------------------------------------------------------------------
    Two entirely separate flows: coached tiers (m1/m3/m6) get an
@@ -234,7 +244,10 @@ function DiyCheckIn({ week1, onSaved }) {
         {status === "saving" ? "Saving…" : complete ? "Get my plan" : "Save"}
       </button>
       {status === "error" && (
-        <p className="problem">That didn't save. Screenshot this and text Liz instead.</p>
+        <p className="problem">
+          That didn't save.{" "}
+          <a href={supportMailto("My check-in didn't save")}>Screenshot this and email Liz instead</a>.
+        </p>
       )}
 
       <div className="mmplus">
@@ -480,7 +493,12 @@ function ProgressPhotoUpload() {
         </button>
       </div>
       {status === "done" && <p className="hint">Uploaded — thanks!</p>}
-      {status === "error" && <p className="problem">That didn't upload. Try again or text it to me.</p>}
+      {status === "error" && (
+        <p className="problem">
+          That didn't upload. Try again, or{" "}
+          <a href={supportMailto("My progress photo didn't upload", "Photo attached.")}>email it to Liz instead</a>.
+        </p>
+      )}
     </section>
   );
 }
@@ -669,7 +687,10 @@ function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved
         {saved === true ? "Saved" : "Save my check-in"}
       </button>
       {saved === "error" && (
-        <p className="problem">That didn't save. Screenshot this and text it to me instead.</p>
+        <p className="problem">
+          That didn't save.{" "}
+          <a href={supportMailto("My check-in didn't save")}>Screenshot this and email it to me instead</a>.
+        </p>
       )}
 
       {isBaseline && (
@@ -768,6 +789,7 @@ function Styles() {
 .cta.small{width:auto;display:inline-block;padding:12px 18px;font-size:13.5px;text-align:center;text-decoration:none}
 .cta.ghost{background:transparent;border:1px solid var(--gold);color:var(--gold)}
 .problem{color:var(--rose);font-size:14px;margin:16px 0 0}
+.problem a{color:var(--rose);text-decoration:underline}
 .hint{color:var(--sage);font-size:14px;margin:16px 0 0}
 
 .photos{max-width:700px;margin:56px auto 0}
