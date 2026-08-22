@@ -1,14 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { computePlan, addWeeks, fmtShort, currentWeekNumber, isCheckinComplete, avgCalories } from "@/lib/plan";
+import {
+  computePlan,
+  computeMacros,
+  addWeeks,
+  fmtShort,
+  currentWeekNumber,
+  isCheckinComplete,
+  avgCalories,
+  weeklyAdjustment,
+} from "@/lib/plan";
 import MessageThread from "@/components/MessageThread";
 
 export default function CoachClientDetail({ lead, checkins, initialMessages }) {
-  const plan = computePlan(lead.form || {});
-  const currentWeek = plan.ok ? currentWeekNumber(lead.start_date, plan.totalWeeks) : null;
   const week1 = checkins.find((c) => c.week_number === 1);
+  const plan = computePlan(lead.form || {}, { realTdee: lead.tier !== "diy" ? avgCalories(week1) : undefined });
+  // DIY is a one-time thing, not an ongoing weekly cadence — "week X of Y"
+  // only makes sense for the coached tiers' recurring check-in loop.
+  const currentWeek = lead.tier !== "diy" && plan.ok ? currentWeekNumber(lead.start_date, plan.totalWeeks) : null;
 
   const weighed = checkins.filter((c) => typeof c.weigh_in === "number").sort((a, b) => a.week_number - b.week_number);
   const latestWeight = weighed[weighed.length - 1]?.weigh_in ?? null;
@@ -20,7 +31,7 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
     .map((c) => ({ week: c.week_number, value: avgCalories(c) }))
     .filter((p) => p.value != null)
     .sort((a, b) => a.week - b.week);
-  const weightTrend = weighed.map((c) => ({ week: c.week_number, value: c.weigh_in }));
+  const weightSeries = weighed.map((c) => ({ week: c.week_number, value: c.weigh_in }));
 
   return (
     <div className="detail">
@@ -46,17 +57,17 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
           </div>
         )}
 
-        {(weightTrend.length >= 2 || calTrend.length >= 2) && (
+        {(weightSeries.length >= 2 || calTrend.length >= 2) && (
           <section className="block">
             <h2>Progress</h2>
             <div className="charts">
-              {weightTrend.length >= 2 && <TrendChart title="Weight" data={weightTrend} unit="lb" color="var(--sage)" />}
+              {weightSeries.length >= 2 && <TrendChart title="Weight" data={weightSeries} unit="lb" color="var(--sage)" />}
               {calTrend.length >= 2 && <TrendChart title="Avg calories" data={calTrend} unit="cal" color="var(--gold)" />}
             </div>
           </section>
         )}
 
-        {plan.ok && <Timeline lead={lead} plan={plan} />}
+        {lead.tier !== "diy" && plan.ok && <Timeline lead={lead} plan={plan} />}
 
         <section className="block">
           <h2>Check-in history</h2>
@@ -86,9 +97,13 @@ export default function CoachClientDetail({ lead, checkins, initialMessages }) {
           )}
         </section>
 
+        {lead.tier !== "diy" && <WeeklyReview lead={lead} checkins={checkins} plan={plan} />}
+
         <PlanBlock lead={lead} week1={week1} />
 
-        <BookingPrompt leadId={lead.id} />
+        {lead.tier !== "diy" && <BookingPrompt leadId={lead.id} />}
+
+        <ProgressPhotos leadId={lead.id} />
 
         <section className="block">
           <h2>Messages</h2>
@@ -176,6 +191,20 @@ function SetPlanForm({ leadId, macroTargets }) {
   );
 }
 
+function diyPhaseCalories(kind, plan) {
+  if (kind === "cut" || kind === "gain") return plan.cutCals;
+  if (kind === "break") return plan.tdee;
+  if (kind === "reverse" || kind === "hold") return Math.round((plan.cutCals + plan.goalTdee) / 2);
+  return plan.tdee;
+}
+
+function diyCaloriesLabel(kind, plan) {
+  if (kind === "cut" || kind === "gain") return `${plan.cutCals} cal`;
+  if (kind === "break") return `${plan.tdee} cal`;
+  if (kind === "reverse" || kind === "hold") return `→ ${plan.goalTdee} cal`;
+  return "—";
+}
+
 function DiyPlanReadOnly({ lead, week1 }) {
   const ready = isCheckinComplete(week1);
   if (!ready) {
@@ -188,8 +217,20 @@ function DiyPlanReadOnly({ lead, week1 }) {
   }
 
   const realTdee = avgCalories(week1);
-  const plan = computePlan(lead.form || {}, { realTdee });
+  const plan = computePlan(lead.form || {}, { realTdee, simpleDietBreaks: true });
   if (!plan.ok) return null;
+
+  const start = new Date(lead.start_date + "T00:00:00");
+  // Baseline week is the week they already tracked to unlock this — leave
+  // it out of the block list so it isn't shown twice.
+  const withDates = plan.phases
+    .reduce((rows, p) => {
+      const priorWeeks = rows.length ? rows[rows.length - 1].weeksAcc : 0;
+      const weeksAcc = priorWeeks + p.weeks;
+      rows.push({ ...p, start: addWeeks(start, priorWeeks), end: addWeeks(start, weeksAcc), weeksAcc });
+      return rows;
+    }, [])
+    .filter((p) => p.kind !== "baseline");
 
   return (
     <section className="block">
@@ -198,7 +239,158 @@ function DiyPlanReadOnly({ lead, week1 }) {
         <Stat k="Real maintenance" v={plan.tdee} u="cal" />
         <Stat k={plan.losing ? "Deficit calories" : "Surplus calories"} v={plan.cutCals} u="cal" />
         <Stat k="Rate" v={plan.weeklyLbs.toFixed(2)} u="lb / wk" />
+        <Stat k="Maintenance at goal" v={plan.goalTdee} u="cal" />
       </div>
+      <div className="ledger">
+        {withDates.map((p) => {
+          const m = computeMacros(lead.form || {}, diyPhaseCalories(p.kind, plan));
+          return (
+            <div className="led-row" key={p.key}>
+              <div className="led-top">
+                <span className="led-label">{p.label}</span>
+                <span className="led-dates">
+                  {fmtShort(p.start)} → {fmtShort(p.end)}
+                </span>
+                <span className="led-cal">{diyCaloriesLabel(p.kind, plan)}</span>
+                <span className="led-weeks">{p.weeks}w</span>
+              </div>
+              <div className="led-macros">
+                <span>Protein {m.proteinG}g</span>
+                <span>Fat {m.fatG}g</span>
+                <span>Carbs {m.carbsG}g</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+const ACTION_LABEL = {
+  hold: "Send hold message",
+  "cut-100": "Apply: cut 100 cal",
+  "add-100": "Apply: add 100 cal",
+  "diet-break": "Start diet break",
+};
+
+function trendLine(trend) {
+  if (!trend) return "—";
+  if (trend.deltaLb === 0) return "Flat this week";
+  return `${trend.deltaLb < 0 ? "Down" : "Up"} ${Math.abs(trend.deltaLb)} lb this week`;
+}
+
+function WeeklyReview({ lead, checkins, plan }) {
+  const rec = weeklyAdjustment(lead, checkins, plan);
+  const [applying, setApplying] = useState(null);
+  const [done, setDone] = useState(null);
+
+  const apply = async (action) => {
+    setApplying(action);
+    try {
+      const res = await fetch("/api/plan/adjust", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: lead.id, action, reason: rec.reason }),
+      });
+      setDone(res.ok ? "ok" : "error");
+    } catch (e) {
+      setDone("error");
+    } finally {
+      setApplying(null);
+    }
+  };
+
+  const sendStepsMessage = async () => {
+    setApplying("steps");
+    try {
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: lead.id,
+          body: "Two slower weeks in a row — let's try adding 2,000 steps before touching food. Same targets, more movement. Next review in a week.",
+        }),
+      });
+      setDone(res.ok ? "ok" : "error");
+    } catch (e) {
+      setDone("error");
+    } finally {
+      setApplying(null);
+    }
+  };
+
+  return (
+    <section className="block">
+      <h2>Weekly review</h2>
+      {rec.status === "no-target" && <p className="empty">Set a plan below before weekly reviews start.</p>}
+      {rec.status === "not-enough-data" && (
+        <p className="empty">Not enough weigh-ins yet — needs at least two check-ins after baseline.</p>
+      )}
+      {rec.status === "on-break" && (
+        <p className="empty">
+          On a diet break until {new Date(rec.until).toLocaleDateString("en-US", { month: "short", day: "numeric" })}.
+        </p>
+      )}
+      {rec.status === "ready" && (
+        <>
+          <div className="stats">
+            <Stat k="Trend" v={trendLine(rec.trend)} u="" />
+            <Stat k="Adherence" v={rec.adherence ? `${rec.adherence.pct}%` : "—"} u="" />
+            <Stat k="Target rate" v={rec.targetRate.toFixed(2)} u="lb / wk" />
+          </div>
+          <p className="review-reason">{rec.reason}</p>
+          {done === "ok" ? (
+            <p className="hint">Applied — client's been messaged.</p>
+          ) : (
+            <div className="review-actions">
+              <button className="cta" onClick={() => apply(rec.action)} disabled={!!applying}>
+                {applying === rec.action ? "Applying…" : ACTION_LABEL[rec.action]}
+              </button>
+              {rec.action === "cut-100" && (
+                <button className="cta ghost" onClick={sendStepsMessage} disabled={!!applying}>
+                  {applying === "steps" ? "Sending…" : "Message: try steps instead"}
+                </button>
+              )}
+            </div>
+          )}
+          {done === "error" && <p className="problem">That didn't go through — try again.</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
+function ProgressPhotos({ leadId }) {
+  const [photos, setPhotos] = useState(null); // null = loading
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/photos?leadId=${leadId}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => setPhotos(data.photos || []))
+      .catch(() => {
+        setError(true);
+        setPhotos([]);
+      });
+  }, [leadId]);
+
+  return (
+    <section className="block">
+      <h2>Progress photos</h2>
+      {error && <p className="empty">Couldn't load photos.</p>}
+      {photos == null && !error && <p className="empty">Loading…</p>}
+      {photos != null && photos.length === 0 && !error && <p className="empty">No photos uploaded yet.</p>}
+      {photos != null && photos.length > 0 && (
+        <div className="photo-grid">
+          {photos.map((p) => (
+            <a key={p.id} href={p.url || "#"} target="_blank" rel="noreferrer" className="photo-cell">
+              {p.url && <img src={p.url} alt="Progress" />}
+              <span>{new Date(p.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+            </a>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -294,11 +486,13 @@ function Timeline({ lead, plan }) {
       <div className="ledger">
         {withDates.map((p) => (
           <div className="led-row" key={p.key}>
-            <span className="led-label">{p.label}</span>
-            <span className="led-dates">
-              {fmtShort(p.start)} → {fmtShort(p.end)}
-            </span>
-            <span className="led-weeks">{p.weeks}w</span>
+            <div className="led-top">
+              <span className="led-label">{p.label}</span>
+              <span className="led-dates">
+                {fmtShort(p.start)} → {fmtShort(p.end)}
+              </span>
+              <span className="led-weeks">{p.weeks}w</span>
+            </div>
           </div>
         ))}
       </div>
@@ -343,17 +537,27 @@ function Styles() {
 .block h2{font-family:var(--display);font-size:20px;font-weight:600;margin:0 0 14px}
 .empty{color:var(--mute);font-size:14px}
 .ledger{border-top:1px solid var(--edge)}
-.led-row{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--edge);font-size:14px}
+.led-row{padding:11px 2px;border-bottom:1px solid var(--edge);font-size:14px}
+.led-top{display:flex;align-items:center;gap:12px}
 .led-label{flex:1}
-.led-dates,.led-weeks{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.led-dates,.led-cal,.led-weeks{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.led-macros{display:flex;gap:16px;margin-top:6px;font-family:var(--mono);font-size:11.5px;color:var(--sage)}
 .hist{width:100%;border-collapse:collapse;font-size:14px}
 .hist th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding:0 10px 10px;border-bottom:1px solid var(--edge)}
 .hist td{padding:10px;border-bottom:1px solid var(--edge)}
 .mono{font-family:var(--mono);color:#4A4550}
 .cta{background:var(--gold);color:#FFFFFF;border:0;border-radius:3px;padding:14px 20px;font-weight:700;font-size:14px;cursor:pointer}
 .cta:disabled{opacity:.6;cursor:default}
+.cta.ghost{background:transparent;border:1px solid var(--gold);color:var(--gold)}
 .hint{font-size:13px;color:var(--sage);margin:10px 0 0}
 .problem{font-size:13px;color:var(--rose);margin:10px 0 0}
+.review-reason{font-size:14px;color:#4A4550;margin:0 0 16px;max-width:60ch}
+.review-actions{display:flex;gap:10px;flex-wrap:wrap}
+
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.photo-cell{display:block;border:1px solid var(--edge);border-radius:4px;overflow:hidden;text-decoration:none;color:var(--mute);font-family:var(--mono);font-size:10px}
+.photo-cell img{width:100%;height:120px;object-fit:cover;display:block;background:var(--tide)}
+.photo-cell span{display:block;padding:6px 8px}
 
 .plan-form{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;max-width:420px}
 .pf-field{display:flex;flex-direction:column;gap:6px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}

@@ -38,7 +38,7 @@ export async function POST(req) {
   if (!lead) return NextResponse.json({ error: "not authorized" }, { status: 401 });
 
   const body = await req.json();
-  const { weekNumber, weighIn, calories, mymacrosEmail } = body || {};
+  const { weekNumber, weighIn, calories, protein, mymacrosEmail } = body || {};
   if (!weekNumber) return NextResponse.json({ error: "weekNumber required" }, { status: 400 });
 
   const row = {
@@ -46,6 +46,7 @@ export async function POST(req) {
     week_number: weekNumber,
     weigh_in: weighIn ?? null,
     calories: calories ?? null,
+    protein: protein ?? null,
     mymacros_email: mymacrosEmail ?? null,
     updated_at: new Date().toISOString(),
   };
@@ -64,7 +65,7 @@ export async function POST(req) {
     await supabaseAdmin.from("messages").insert({
       lead_id: lead.id,
       sender: "coach",
-      body: "Your full plan's ready — check out Step 3 in your portal.",
+      body: "Your full plan's ready — check out Step 2 in your portal.",
     });
   }
 

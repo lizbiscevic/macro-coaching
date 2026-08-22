@@ -54,6 +54,34 @@ create table if not exists checkins (
 alter table checkins enable row level security;
 create index if not exists checkins_lead_id_idx on checkins(lead_id, week_number);
 
+-- Daily protein, 7 values Mon..Sun, same shape as calories. Coached tiers
+-- only — needed to grade "on plan" (calories AND protein within range),
+-- not just calorie adherence, per the weekly-adjustment rules.
+alter table checkins add column if not exists protein jsonb;
+
+-- Set when a diet break is applied by the weekly-adjustment tool, so the
+-- coach view knows to show "on a break until X" instead of re-running the
+-- slow/fast logic during a deliberate maintenance window. Left to expire
+-- naturally — no auto-revert; adjustment logic resumes once it's past.
+alter table leads add column if not exists diet_break_until timestamptz;
+
+-- Progress photos — monthly, optional, reviewed by the coach on her own
+-- schedule (calls or async). Deliberately not part of the weekly check-in
+-- so that stays fast. Stored in a private bucket; only ever read back via
+-- signed URLs generated server-side with the service role key.
+create table if not exists progress_photos (
+  id uuid primary key default gen_random_uuid(),
+  lead_id text not null references leads(id) on delete cascade,
+  storage_path text not null,
+  created_at timestamptz not null default now()
+);
+alter table progress_photos enable row level security;
+create index if not exists progress_photos_lead_id_idx on progress_photos(lead_id, created_at);
+
+insert into storage.buckets (id, name, public)
+values ('progress-photos', 'progress-photos', false)
+on conflict (id) do nothing;
+
 -- Simple stored thread per client, not real-time chat. `sender` is always
 -- set server-side from the authenticated session, never client-supplied.
 create table if not exists messages (
