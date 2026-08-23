@@ -1,7 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { computePlan, computeMacros, currentWeekNumber, isCheckinComplete, avgCalories, addWeeks, fmtShort } from "@/lib/plan";
+import {
+  computePlan,
+  computeMacros,
+  currentWeekNumber,
+  isCheckinComplete,
+  avgCalories,
+  addWeeks,
+  fmtShort,
+  reverseChainLabel,
+  expectedRateRange,
+  planRules,
+} from "@/lib/plan";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import MessageThread from "@/components/MessageThread";
 
@@ -275,93 +286,178 @@ function DiyCheckIn({ week1, onSaved }) {
   );
 }
 
-function caloriesForPhase(kind, plan) {
-  if (kind === "cut" || kind === "gain") return `${plan.cutCals} cal`;
-  if (kind === "break") return `${plan.tdee} cal`;
-  if (kind === "reverse" || kind === "hold") return `→ ${plan.goalTdee} cal`;
-  return "—";
+// What each phase's row says in the timeline — calories plus a short
+// plain-language description. No per-block macro breakdown here: protein
+// and fiber stay constant across the whole plan (shown once, up top),
+// and fat/carbs move with calories in a way the "How I got here" section
+// already explains — repeating the full split on every row would just be
+// noise.
+function phaseWhatHappens(p, plan) {
+  if (p.kind === "cut" || p.kind === "gain") {
+    const rate = expectedRateRange(plan.weeklyLbs);
+    return `${plan.cutCals.toLocaleString()} cal. Expect ${rate.low}–${rate.high} lb/week; ~${plan.weeklyLbs.toFixed(1)} lb/week average`;
+  }
+  if (p.kind === "break") {
+    return `${p.weeks} week${p.weeks > 1 ? "s" : ""} at ~${plan.tdee.toLocaleString()} cal (your real maintenance) — built in since this deficit runs past ~3 months`;
+  }
+  if (p.kind === "reverse") return reverseChainLabel(plan);
+  if (p.kind === "hold") return `Hold at ~${plan.goalTdee.toLocaleString()} cal for at least 8 weeks before any new deficit`;
+  return "";
 }
 
-// The reverse diet ramps week over week rather than sitting at one number,
-// so its macros are set off the midpoint of the ramp — a reasonable single
-// target for a block that's meant to be adjusted upward as it goes.
-function phaseCalories(kind, plan) {
-  if (kind === "cut" || kind === "gain") return plan.cutCals;
-  if (kind === "break") return plan.tdee;
-  if (kind === "reverse" || kind === "hold") return Math.round((plan.cutCals + plan.goalTdee) / 2);
-  return plan.tdee;
-}
-
-function macrosLabel(m) {
-  return `P ${m.proteinG}g (±5) · F ${m.fatG}g (±5) · C ${m.carbsG}g (±5)`;
-}
-
-function buildPlanEmail(lead, plan, withDates) {
+function buildPlanEmail(lead, plan, rows, macros, rules) {
   const lines = [
-    `Starting weight: ${lead.form?.weight} lb`,
-    `Goal weight: ${lead.form?.goal} lb`,
-    `Timeline: ${plan.totalWeeks} weeks`,
+    `Your One-Time Macro Plan — ${lead.name || ""}`,
+    `${lead.form?.weight} lb → ${lead.form?.goal} lb`,
     "",
-    ...withDates.map((p) => {
-      const m = computeMacros(lead.form || {}, phaseCalories(p.kind, plan));
-      return `${p.label}: ${fmtShort(p.start)} - ${fmtShort(p.end)} (${p.weeks}w) - ${caloriesForPhase(p.kind, plan)} - ${macrosLabel(m)}`;
-    }),
+    "YOUR NUMBERS",
+    `Calories: ${plan.cutCals} (${plan.cutCals - 25}–${plan.cutCals + 25})`,
+    `Protein: ${macros.proteinG}g (${macros.proteinG - 5}–${macros.proteinG + 5}g) — hit this`,
+    `Fat: ${macros.fatG}g (${macros.fatG - 5}–${macros.fatG + 5}g) — stay near this`,
+    `Carbs: ${macros.carbsG}g (${macros.carbsG - 5}–${macros.carbsG + 5}g) — fill the rest`,
+    `Fiber: ${macros.fiberG}g minimum`,
+    "",
+    "YOUR TIMELINE",
+    ...rows.map((r) => `${r.label} (weeks ${r.weekStart}-${r.weekEnd}): ${phaseWhatHappens(r, plan)}`),
+    "",
+    `Realistic finish: ~${plan.dietingWeeks + plan.reverseWeeks} weeks to ${lead.form?.goal} lb and holding it.`,
+    "",
+    "RULES FOR THE NEXT FEW WEEKS",
+    ...rules.weeklyRules.map((r, i) => `${i + 1}. ${r}`),
+    "",
+    "WHEN TO CHANGE SOMETHING",
+    ...rules.changeRules.map((r) => `- ${r}`),
+    "",
+    rules.doneText,
   ];
   return `mailto:?subject=${encodeURIComponent("My macro plan")}&body=${encodeURIComponent(lines.join("\n"))}`;
 }
 
+function NumberCard({ k, v, u, range, note }) {
+  return (
+    <div className="numcard">
+      <span className="s-k">{k}</span>
+      <span className="s-v">
+        {v}
+        <span className="s-u"> {u}</span>
+      </span>
+      {range && <span className="s-range">{range}</span>}
+      {note && <span className="s-note">{note}</span>}
+    </div>
+  );
+}
+
 function DiyPlan({ lead, week1 }) {
   const realTdee = avgCalories(week1);
-  const plan = computePlan(lead.form || {}, { realTdee, simpleDietBreaks: true });
+  const plan = computePlan(lead.form || {}, { realTdee, simpleDietBreaks: true, ageAdjustedTdee: true });
   if (!plan.ok) return <p className="lede center">Your plan will show up here once week one is in.</p>;
+
+  const f = lead.form || {};
+  const female = f.sex !== "male";
+  const macros = computeMacros(f, plan.cutCals);
+  const rules = planRules(lead, plan);
+  const rate = expectedRateRange(plan.weeklyLbs);
+  const fatPct = Math.round(((macros.fatG * 9) / plan.cutCals) * 100);
+  const proteinPerLb = (macros.proteinG / (+f.goal || 1)).toFixed(2);
 
   const start = new Date(lead.start_date + "T00:00:00");
   // The formula's "baseline week" phase is the week they just finished in
-  // Step 1 above — showing it again here as an upcoming block would just
-  // duplicate that. Its week still counts toward the dates below; it's
-  // only left out of what's rendered.
-  const withDates = plan.phases
-    .reduce((rows, p) => {
-      const priorWeeks = rows.length ? rows[rows.length - 1].weeksAcc : 0;
+  // Step 1 above — showing it again here as an upcoming row would just
+  // duplicate that. Its week still counts toward the numbering below;
+  // it's only left out of what's rendered. Week numbers count from the
+  // day the real plan starts (right after baseline), not from day one.
+  const rows = plan.phases
+    .reduce((acc, p) => {
+      const priorWeeks = acc.length ? acc[acc.length - 1].weeksAcc : 0;
       const weeksAcc = priorWeeks + p.weeks;
-      rows.push({ ...p, start: addWeeks(start, priorWeeks), end: addWeeks(start, weeksAcc), weeksAcc });
-      return rows;
+      acc.push({ ...p, start: addWeeks(start, priorWeeks), end: addWeeks(start, weeksAcc), weeksAcc, weekStart: priorWeeks, weekEnd: weeksAcc - 1 });
+      return acc;
     }, [])
     .filter((p) => p.kind !== "baseline");
 
   return (
-    <section className="plan-section">
-      <div className="stats">
-        <Stat k="Real maintenance" v={plan.tdee} u="cal" />
-        <Stat k={plan.losing ? "Deficit calories" : "Surplus calories"} v={plan.cutCals} u="cal" />
-        <Stat k="Rate" v={plan.weeklyLbs.toFixed(2)} u="lb / wk" />
-        <Stat k="Maintenance at goal" v={plan.goalTdee} u="cal" />
+    <section className="plan-doc">
+      <header className="doc-head">
+        <h2>Your One-Time Macro Plan</h2>
+        <p>
+          {lead.name || "You"} · Age {f.age} · {f.weight} lb → {f.goal} lb
+        </p>
+      </header>
+
+      <h3 className="doc-h3">Your numbers</h3>
+      <div className="numgrid">
+        <NumberCard k="Calories" v={plan.cutCals.toLocaleString()} range={`${plan.cutCals - 25}–${plan.cutCals + 25}`} />
+        <NumberCard k="Protein" v={macros.proteinG} u="g" range={`${macros.proteinG - 5}–${macros.proteinG + 5}g`} note="hit this" />
+        <NumberCard k="Fat" v={macros.fatG} u="g" range={`${macros.fatG - 5}–${macros.fatG + 5}g`} note="stay near this" />
+        <NumberCard k="Carbs" v={macros.carbsG} u="g" range={`${macros.carbsG - 5}–${macros.carbsG + 5}g`} note="fill the rest" />
+        <NumberCard k="Fiber" v={macros.fiberG} u="g" note="minimum" />
       </div>
-      <div className="ledger">
-        {withDates.map((p) => {
-          const m = computeMacros(lead.form || {}, phaseCalories(p.kind, plan));
-          return (
-            <div className="led-row" key={p.key}>
-              <div className="led-top">
-                <span className="led-label">{p.label}</span>
-                <span className="led-dates">
-                  {fmtShort(p.start)} → {fmtShort(p.end)}
-                </span>
-                <span className="led-cal">{caloriesForPhase(p.kind, plan)}</span>
-                <span className="led-weeks">{p.weeks}w</span>
-              </div>
-              <div className="led-macros">
-                <span>Protein {m.proteinG}g</span>
-                <span>Fat {m.fatG}g</span>
-                <span>Carbs {m.carbsG}g</span>
-              </div>
-            </div>
-          );
-        })}
+      <p className="doc-line">
+        <strong>Steps:</strong> add about 2,000 to your normal daily average.
+      </p>
+      <p className="doc-line">
+        <strong>Training:</strong> strength train 2–3x/week, non-negotiable — this is what makes the loss come
+        from fat instead of muscle.
+      </p>
+
+      <h3 className="doc-h3">How I got here</h3>
+      <ul className="doc-list">
+        <li>
+          {realTdee ? "Real" : "Estimated"} maintenance: ~{plan.tdee.toLocaleString()} calories
+          {realTdee ? " — pulled from the week you tracked, not a formula guess" : " (formula estimate)"}
+        </li>
+        <li>Deficit: {Math.round(((plan.tdee - plan.cutCals) / plan.tdee) * 100)}% below maintenance</li>
+        <li>
+          Protein: {proteinPerLb} g per lb of goal weight ({f.goal})
+          {(+f.age || 0) >= 30 ? ", upper end of the range" : ""}
+        </li>
+        <li>
+          Fat: {fatPct}% of calories, above the {female ? 45 : 50}g floor{female ? " that protects your cycle" : ""}
+        </li>
+        <li>Carbs: whatever's left, comfortably above the 100g floor</li>
+      </ul>
+
+      <h3 className="doc-h3">Your timeline</h3>
+      <div className="timeline-table">
+        <div className="tt-head">
+          <span>Phase</span>
+          <span>Weeks</span>
+          <span>What happens</span>
+        </div>
+        {rows.map((r) => (
+          <div className="tt-row" key={r.key}>
+            <span className="tt-phase">{r.label}</span>
+            <span className="tt-weeks">{r.weekStart === r.weekEnd ? r.weekStart : `${r.weekStart}–${r.weekEnd}`}</span>
+            <span className="tt-desc">{phaseWhatHappens(r, plan)}</span>
+          </div>
+        ))}
       </div>
-      <p className="micro">Macros given as ±5g of the target — flex there day to day, don't chase the exact number.</p>
+      <p className="finish-callout">
+        <strong>Realistic finish: ~{plan.dietingWeeks + plan.reverseWeeks} weeks to {f.goal} lb and holding it.</strong>{" "}
+        The reverse isn't optional — it's the difference between getting there once and getting there for good.
+      </p>
+
+      <div className="doc-pagebreak" />
+
+      <h3 className="doc-h3">Rules for the next few weeks</h3>
+      <ol className="doc-list numbered">
+        {rules.weeklyRules.map((r, i) => (
+          <li key={i}>{r}</li>
+        ))}
+      </ol>
+
+      <h3 className="doc-h3">When to change something</h3>
+      <ul className="doc-list">
+        {rules.changeRules.map((r, i) => (
+          <li key={i}>{r}</li>
+        ))}
+      </ul>
+
+      <h3 className="doc-h3">What "done" looks like</h3>
+      <p className="doc-line">{rules.doneText}</p>
+
       <div className="plan-actions">
-        <a className="cta small" href={buildPlanEmail(lead, plan, withDates)}>
+        <a className="cta small" href={buildPlanEmail(lead, plan, rows, macros, rules)}>
           Email me my plan
         </a>
         <button className="cta small ghost" onClick={() => window.print()}>
@@ -820,25 +916,54 @@ function Styles() {
 .s-k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
 .s-v{display:block;font-family:var(--display);font-size:30px;font-weight:600;margin-top:6px;line-height:1}
 .s-u{font-family:var(--mono);font-size:11px;color:var(--mute)}
-.ledger{border-top:1px solid var(--edge)}
-.led-row{padding:11px 2px;border-bottom:1px solid var(--edge);font-size:14px}
-.led-top{display:flex;align-items:center;gap:12px}
-.led-label{flex:1}
-.led-dates,.led-cal,.led-weeks{font-family:var(--mono);font-size:12px;color:var(--mute)}
-.led-macros{display:flex;gap:16px;margin-top:6px;font-family:var(--mono);font-size:11.5px;color:var(--sage)}
 .micro{font-family:var(--mono);font-size:11px;color:var(--mute);margin:16px 0 0}
 .plan-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
 
 .messages{max-width:700px;margin:56px auto 0}
 
+/* --- Plan document (DIY's "Your One-Time Macro Plan") --- */
+.plan-doc{max-width:700px;margin:0 auto}
+.doc-head{margin-bottom:28px}
+.doc-head h2{font-family:var(--display);font-weight:600;font-size:clamp(26px,4.5vw,34px);margin:0 0 6px;letter-spacing:-.02em}
+.doc-head p{font-family:var(--mono);font-size:13px;color:var(--mute);margin:0}
+.doc-h3{font-family:var(--display);font-weight:600;font-size:19px;margin:34px 0 14px}
+.doc-h3:first-of-type{margin-top:0}
+
+.numgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:1px;background:var(--edge);border:1px solid var(--edge);margin-bottom:18px}
+.numcard{background:var(--tide);padding:14px}
+.numcard .s-v{display:block;font-family:var(--display);font-size:26px;font-weight:600;margin-top:6px;line-height:1}
+.numcard .s-u{font-family:var(--mono);font-size:11px;color:var(--mute);font-weight:400}
+.s-range{display:block;font-family:var(--mono);font-size:11px;color:var(--mute);margin-top:6px}
+.s-note{display:block;font-family:var(--mono);font-size:10.5px;color:var(--sage);margin-top:2px}
+
+.doc-line{font-size:14.5px;color:#4A4550;margin:0 0 8px;line-height:1.55}
+.doc-list{margin:0;padding-left:0;list-style:none}
+.doc-list li{position:relative;padding-left:18px;margin-bottom:10px;font-size:14.5px;color:#4A4550;line-height:1.5}
+.doc-list li:before{content:"";position:absolute;left:0;top:9px;width:8px;height:1px;background:var(--sage)}
+.doc-list.numbered{counter-reset:dl}
+.doc-list.numbered li{counter-increment:dl;padding-left:26px}
+.doc-list.numbered li:before{content:counter(dl) ".";width:auto;height:auto;background:none;font-family:var(--mono);font-size:12px;color:var(--sage);top:0}
+
+.timeline-table{border-top:1px solid var(--edge)}
+.tt-head{display:none}
+.tt-row{display:grid;grid-template-columns:140px 64px 1fr;gap:14px;padding:12px 2px;border-bottom:1px solid var(--edge);font-size:14px;align-items:baseline}
+.tt-phase{font-weight:600}
+.tt-weeks{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.tt-desc{font-size:13.5px;color:#4A4550;line-height:1.5}
+.finish-callout{background:var(--tide);border:1px solid var(--edge);border-radius:4px;padding:18px 20px;margin:20px 0 0;font-size:14px;color:#4A4550;line-height:1.55}
+
+.doc-pagebreak{display:none}
+
 @media (max-width:560px){
   .cal-grid{grid-template-columns:repeat(4,1fr)}
   .booking-frame iframe{height:560px}
-  .led-top{flex-wrap:wrap}
+  .tt-row{grid-template-columns:1fr;gap:4px}
 }
 
 @media print{
-  .p-head,.welcome,.step-head,.messages,.plan-actions,.signout{display:none}
+  .p-head,.welcome,.step-head,.messages,.plan-actions,.signout,.week1,.mmplus{display:none}
+  .plan-doc{max-width:none}
+  .doc-pagebreak{display:block;break-before:page}
 }
     `}</style>
   );

@@ -11,12 +11,18 @@ import {
   isCheckinComplete,
   avgCalories,
   weeklyAdjustment,
+  reverseChainLabel,
+  expectedRateRange,
+  planRules,
 } from "@/lib/plan";
 import MessageThread from "@/components/MessageThread";
 
 export default function CoachClientDetail({ lead, checkins, initialMessages }) {
   const week1 = checkins.find((c) => c.week_number === 1);
-  const plan = computePlan(lead.form || {}, { realTdee: lead.tier !== "diy" ? avgCalories(week1) : undefined });
+  const plan = computePlan(lead.form || {}, {
+    realTdee: lead.tier !== "diy" ? avgCalories(week1) : undefined,
+    ageAdjustedTdee: true,
+  });
   // DIY is a one-time thing, not an ongoing weekly cadence — "week X of Y"
   // only makes sense for the coached tiers' recurring check-in loop.
   const currentWeek = lead.tier !== "diy" && plan.ok ? currentWeekNumber(lead.start_date, plan.totalWeeks) : null;
@@ -191,20 +197,23 @@ function SetPlanForm({ leadId, macroTargets }) {
   );
 }
 
-function diyPhaseCalories(kind, plan) {
-  if (kind === "cut" || kind === "gain") return plan.cutCals;
-  if (kind === "break") return plan.tdee;
-  if (kind === "reverse" || kind === "hold") return Math.round((plan.cutCals + plan.goalTdee) / 2);
-  return plan.tdee;
+function diyWhatHappens(p, plan) {
+  if (p.kind === "cut" || p.kind === "gain") {
+    const rate = expectedRateRange(plan.weeklyLbs);
+    return `${plan.cutCals.toLocaleString()} cal. Expect ${rate.low}–${rate.high} lb/week; ~${plan.weeklyLbs.toFixed(1)} lb/week average`;
+  }
+  if (p.kind === "break") {
+    return `${p.weeks} week${p.weeks > 1 ? "s" : ""} at ~${plan.tdee.toLocaleString()} cal (real maintenance) — built in since this deficit runs past ~3 months`;
+  }
+  if (p.kind === "reverse") return reverseChainLabel(plan);
+  if (p.kind === "hold") return `Hold at ~${plan.goalTdee.toLocaleString()} cal for at least 8 weeks before any new deficit`;
+  return "";
 }
 
-function diyCaloriesLabel(kind, plan) {
-  if (kind === "cut" || kind === "gain") return `${plan.cutCals} cal`;
-  if (kind === "break") return `${plan.tdee} cal`;
-  if (kind === "reverse" || kind === "hold") return `→ ${plan.goalTdee} cal`;
-  return "—";
-}
-
+// Mirrors the plan document the client sees (ClientPortal.jsx's DiyPlan)
+// so this is what's actually being reviewed here, not an approximation
+// of it — same math, same content, just without the email/print actions
+// that only make sense on the client's own side.
 function DiyPlanReadOnly({ lead, week1 }) {
   const ready = isCheckinComplete(week1);
   if (!ready) {
@@ -217,53 +226,92 @@ function DiyPlanReadOnly({ lead, week1 }) {
   }
 
   const realTdee = avgCalories(week1);
-  const plan = computePlan(lead.form || {}, { realTdee, simpleDietBreaks: true });
+  const plan = computePlan(lead.form || {}, { realTdee, simpleDietBreaks: true, ageAdjustedTdee: true });
   if (!plan.ok) return null;
 
+  const f = lead.form || {};
+  const female = f.sex !== "male";
+  const macros = computeMacros(f, plan.cutCals);
+  const rules = planRules(lead, plan);
+  const fatPct = Math.round(((macros.fatG * 9) / plan.cutCals) * 100);
+  const proteinPerLb = (macros.proteinG / (+f.goal || 1)).toFixed(2);
+
   const start = new Date(lead.start_date + "T00:00:00");
-  // Baseline week is the week they already tracked to unlock this — leave
-  // it out of the block list so it isn't shown twice.
-  const withDates = plan.phases
-    .reduce((rows, p) => {
-      const priorWeeks = rows.length ? rows[rows.length - 1].weeksAcc : 0;
+  const rows = plan.phases
+    .reduce((acc, p) => {
+      const priorWeeks = acc.length ? acc[acc.length - 1].weeksAcc : 0;
       const weeksAcc = priorWeeks + p.weeks;
-      rows.push({ ...p, start: addWeeks(start, priorWeeks), end: addWeeks(start, weeksAcc), weeksAcc });
-      return rows;
+      acc.push({ ...p, weeksAcc, weekStart: priorWeeks, weekEnd: weeksAcc - 1 });
+      return acc;
     }, [])
     .filter((p) => p.kind !== "baseline");
 
   return (
     <section className="block">
       <h2>Client's plan (auto-generated)</h2>
+
       <div className="stats">
-        <Stat k="Real maintenance" v={plan.tdee} u="cal" />
-        <Stat k={plan.losing ? "Deficit calories" : "Surplus calories"} v={plan.cutCals} u="cal" />
-        <Stat k="Rate" v={plan.weeklyLbs.toFixed(2)} u="lb / wk" />
-        <Stat k="Maintenance at goal" v={plan.goalTdee} u="cal" />
+        <NumberStat k="Calories" v={plan.cutCals} range={`${plan.cutCals - 25}–${plan.cutCals + 25}`} />
+        <NumberStat k="Protein" v={macros.proteinG} u="g" range={`${macros.proteinG - 5}–${macros.proteinG + 5}g`} note="hit this" />
+        <NumberStat k="Fat" v={macros.fatG} u="g" range={`${macros.fatG - 5}–${macros.fatG + 5}g`} note="stay near this" />
+        <NumberStat k="Carbs" v={macros.carbsG} u="g" range={`${macros.carbsG - 5}–${macros.carbsG + 5}g`} note="fill the rest" />
+        <NumberStat k="Fiber" v={macros.fiberG} u="g" note="minimum" />
       </div>
-      <div className="ledger">
-        {withDates.map((p) => {
-          const m = computeMacros(lead.form || {}, diyPhaseCalories(p.kind, plan));
-          return (
-            <div className="led-row" key={p.key}>
-              <div className="led-top">
-                <span className="led-label">{p.label}</span>
-                <span className="led-dates">
-                  {fmtShort(p.start)} → {fmtShort(p.end)}
-                </span>
-                <span className="led-cal">{diyCaloriesLabel(p.kind, plan)}</span>
-                <span className="led-weeks">{p.weeks}w</span>
-              </div>
-              <div className="led-macros">
-                <span>Protein {m.proteinG}g</span>
-                <span>Fat {m.fatG}g</span>
-                <span>Carbs {m.carbsG}g</span>
-              </div>
-            </div>
-          );
-        })}
+
+      <ul className="doc-list">
+        <li>
+          {realTdee ? "Real" : "Estimated"} maintenance: ~{plan.tdee.toLocaleString()} cal
+          {realTdee ? " (from tracked week)" : " (formula)"}
+        </li>
+        <li>Deficit: {Math.round(((plan.tdee - plan.cutCals) / plan.tdee) * 100)}% below maintenance</li>
+        <li>
+          Protein: {proteinPerLb} g/lb of goal weight{(+f.age || 0) >= 30 ? " (upper end)" : ""} · Fat: {fatPct}% of calories, floor{" "}
+          {female ? 45 : 50}g
+        </li>
+      </ul>
+
+      <div className="timeline-table">
+        {rows.map((r) => (
+          <div className="tt-row" key={r.key}>
+            <span className="tt-phase">{r.label}</span>
+            <span className="tt-weeks">{r.weekStart === r.weekEnd ? r.weekStart : `${r.weekStart}–${r.weekEnd}`}</span>
+            <span className="tt-desc">{diyWhatHappens(r, plan)}</span>
+          </div>
+        ))}
       </div>
+      <p className="empty" style={{ marginTop: 10 }}>
+        Finish: ~{plan.dietingWeeks + plan.reverseWeeks} weeks to {f.goal} lb and holding it.
+      </p>
+
+      <details className="doc-details">
+        <summary>Rules &amp; when-to-change text (as shown to client)</summary>
+        <ul className="doc-list">
+          {rules.weeklyRules.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+        <ul className="doc-list">
+          {rules.changeRules.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+        <p className="empty">{rules.doneText}</p>
+      </details>
     </section>
+  );
+}
+
+function NumberStat({ k, v, u, range, note }) {
+  return (
+    <div className="stat">
+      <span className="s-k">{k}</span>
+      <span className="s-v">
+        {v}
+        {u && <span className="s-u"> {u}</span>}
+      </span>
+      {range && <span className="s-range">{range}</span>}
+      {note && <span className="s-note">{note}</span>}
+    </div>
   );
 }
 
@@ -538,6 +586,8 @@ function Styles() {
 .empty{color:var(--mute);font-size:14px}
 .ledger{border-top:1px solid var(--edge)}
 .led-row{padding:11px 2px;border-bottom:1px solid var(--edge);font-size:14px}
+.led-row.led-sub{padding:8px 2px 8px 18px;border-bottom:1px dashed var(--edge)}
+.led-row.led-sub .led-label{color:var(--mute);font-size:13px}
 .led-top{display:flex;align-items:center;gap:12px}
 .led-label{flex:1}
 .led-dates,.led-cal,.led-weeks{font-family:var(--mono);font-size:12px;color:var(--mute)}
@@ -568,6 +618,22 @@ function Styles() {
 .s-k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
 .s-v{display:block;font-family:var(--display);font-size:26px;font-weight:600;margin-top:6px;line-height:1}
 .s-u{font-family:var(--mono);font-size:11px;color:var(--mute)}
+.s-range{display:block;font-family:var(--mono);font-size:11px;color:var(--mute);margin-top:6px}
+.s-note{display:block;font-family:var(--mono);font-size:10.5px;color:var(--sage);margin-top:2px}
+
+.doc-list{margin:16px 0;padding-left:0;list-style:none}
+.doc-list li{position:relative;padding-left:16px;margin-bottom:8px;font-size:13.5px;color:#4A4550;line-height:1.5}
+.doc-list li:before{content:"";position:absolute;left:0;top:8px;width:7px;height:1px;background:var(--sage)}
+
+.timeline-table{border-top:1px solid var(--edge);margin-top:14px}
+.tt-row{display:grid;grid-template-columns:140px 60px 1fr;gap:12px;padding:10px 2px;border-bottom:1px solid var(--edge);font-size:13.5px;align-items:baseline}
+.tt-phase{font-weight:600}
+.tt-weeks{font-family:var(--mono);font-size:11.5px;color:var(--mute)}
+.tt-desc{font-size:13px;color:#4A4550;line-height:1.5}
+
+.doc-details{margin-top:16px;border:1px solid var(--edge);border-radius:4px;padding:12px 16px}
+.doc-details summary{cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.doc-details .doc-list{margin-top:12px}
 
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
 .chart{background:var(--tide);border:1px solid var(--edge);border-radius:4px;padding:16px;position:relative}
