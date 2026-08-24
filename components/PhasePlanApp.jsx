@@ -199,24 +199,6 @@ export default function PhasePlanApp() {
         <>
           <Hero />
 
-          <section className="whyme">
-            <p className="eyebrow center">Why work with me</p>
-            <div className="lede center">
-              <p>
-                Let's be real — it's about food, but it's also about life. Diet culture
-                is a cycle of punishment: restrict, feel guilty, start over Monday. This
-                macro journey is about empowerment — empowering you to live your life,
-                eat what you actually want, and still hit your goal. Having your cake
-                and eating it too, <em>literally</em>.
-              </p>
-              <p>
-                People who've worked with me say it feels less like hiring a coach and
-                more like having a sister or a best friend in your corner. We'll get to
-                know each other. We'll talk. We'll hit your goals.
-              </p>
-            </div>
-          </section>
-
           <section className="card form">
             <div className="row">
               <Field label="You are">
@@ -284,6 +266,8 @@ export default function PhasePlanApp() {
 
             {plan && !plan.ok && <Problem reason={plan.reason} />}
           </section>
+
+          <WhyMe />
         </>
       ) : null}
 
@@ -354,6 +338,35 @@ function Hero() {
           So we start with your goals. I'll tell you exactly when you can expect to
           be there — and then how to train your metabolism to eat <em>more</em> while
           you keep the result. <ReverseLink />
+        </p>
+      </div>
+      <button className="hero-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {open ? "Show less −" : "Read more +"}
+      </button>
+    </section>
+  );
+}
+
+function WhyMe() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="hero whyme-hero">
+      <h1>Why work with me.</h1>
+      <p className="hero-sub">
+        This isn't <em>diet culture</em>.
+      </p>
+      <div className={"lede " + (open ? "open" : "")}>
+        <p>
+          Let's be real — it's about food, but it's also about life. Diet culture is a
+          cycle of punishment: restrict, feel guilty, start over Monday. This macro
+          journey is about empowerment — empowering you to live your life, eat what you
+          actually want, and still hit your goal. Having your cake and eating it too,{" "}
+          <em>literally</em>.
+        </p>
+        <p>
+          People who've worked with me say it feels less like hiring a coach and more
+          like having a sister or a best friend in your corner. We'll get to know each
+          other. We'll talk. We'll hit your goals.
         </p>
       </div>
       <button className="hero-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -787,7 +800,7 @@ function Styles() {
 .lede.center{margin:0 auto 30px;text-align:center}
 .hero-toggle{display:none}
 
-.whyme{max-width:760px;margin:10px auto 0;padding-top:38px;border-top:1px solid var(--edge)}
+.whyme-hero{margin-top:44px;padding-top:38px;border-top:1px solid var(--edge)}
 
 .inline-link{background:none;border:0;padding:0;font-family:var(--body);font-size:16.5px;color:var(--sage);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
 .explainer{display:block;margin-top:16px;padding:16px 18px;background:var(--tide);border-left:2px solid var(--sage);border-radius:2px;font-size:14.5px;line-height:1.6;color:#4A4550}
