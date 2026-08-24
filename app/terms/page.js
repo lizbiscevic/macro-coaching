@@ -70,7 +70,8 @@ export default function TermsPage() {
 
       <h2>Governing law</h2>
       <p>
-        These terms are governed by the laws of [state/jurisdiction to be added].
+        These terms are governed by the laws of the State of California, without regard to its conflict
+        of law principles.
       </p>
 
       <h2>Changes</h2>
