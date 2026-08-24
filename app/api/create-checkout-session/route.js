@@ -22,11 +22,32 @@ const PRICE_ENV = {
 const SUBSCRIPTION_TIERS = new Set(["m1"]);
 
 export async function POST(req) {
-  if (!stripe) return NextResponse.json({ configured: false }, { status: 501 });
+  if (!stripe) return NextResponse.json({ error: "checkout is not configured" }, { status: 501 });
 
-  const { tier, email, leadId } = await req.json();
-  const priceId = tier && process.env[PRICE_ENV[tier]];
-  if (!priceId) return NextResponse.json({ configured: false }, { status: 501 });
+  // Belt-and-suspenders against a live key ever running outside the
+  // production deployment — VERCEL_ENV is set automatically by Vercel
+  // (production/preview/development) and isn't something a request can
+  // forge, unlike a header or origin check.
+  const vercelEnv = process.env.VERCEL_ENV;
+  const isLiveKey = process.env.STRIPE_SECRET_KEY?.startsWith("sk_live_");
+  if (isLiveKey && vercelEnv && vercelEnv !== "production") {
+    return NextResponse.json({ error: "live Stripe key is not allowed outside production" }, { status: 403 });
+  }
+
+  let body;
+  try {
+    body = await req.json();
+  } catch (err) {
+    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  const { tier, email, leadId } = body || {};
+  if (!tier || !PRICE_ENV[tier]) return NextResponse.json({ error: "tier is required and must be a valid plan" }, { status: 400 });
+  if (!email) return NextResponse.json({ error: "email is required" }, { status: 400 });
+  if (!leadId) return NextResponse.json({ error: "leadId is required" }, { status: 400 });
+
+  const priceId = process.env[PRICE_ENV[tier]];
+  if (!priceId) return NextResponse.json({ error: "checkout is not configured" }, { status: 501 });
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || req.headers.get("origin");
 
@@ -42,6 +63,6 @@ export async function POST(req) {
     });
     return NextResponse.json({ url: session.url });
   } catch (err) {
-    return NextResponse.json({ configured: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

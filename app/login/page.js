@@ -25,7 +25,7 @@ function LoginForm() {
   const [err, setErr] = useState(ERRORS[params.get("error")] || "");
 
   const go = async () => {
-    if (!/^\S+@\S+\.\S+$/.test(email)) return setErr("That email doesn't look right — check it and try again.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return setErr("That email doesn't look right — check it and try again.");
     if (!supabaseBrowser) return setErr("Login isn't set up yet.");
     setErr("");
     const { error } = await supabaseBrowser.auth.signInWithOtp({
@@ -45,7 +45,7 @@ function LoginForm() {
           <p className="msg">Check your email — I sent a link to {email}.</p>
         ) : (
           <>
-            <p className="msg">Enter your email and I'll send you a link in.</p>
+            <p className="msg">Enter your email and I'll send you a magic link to log in.</p>
             <input
               className="txt"
               type="email"

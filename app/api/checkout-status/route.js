@@ -19,7 +19,15 @@ export async function GET(req) {
   const sessionId = new URL(req.url).searchParams.get("session_id");
   if (!sessionId || !stripe) return NextResponse.json({ paid: false }, { status: 400 });
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  let session;
+  try {
+    session = await stripe.checkout.sessions.retrieve(sessionId);
+  } catch (err) {
+    // Not our error to surface — a fake, expired, or wrong-mode session id
+    // just means "not paid" as far as the browser needs to know.
+    return NextResponse.json({ paid: false }, { status: 200 });
+  }
+
   const paid = session.payment_status === "paid";
   const leadId = session.client_reference_id || null;
 

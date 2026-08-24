@@ -34,7 +34,14 @@ export async function GET(req) {
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const { data, error } = await supabaseAdmin.from("leads").select("*").eq("id", id).maybeSingle();
+  // Only what the client actually needs to resume state on another device —
+  // never the internal fields (stripe_session_id, macro_targets, user_id,
+  // etc.), even though the id itself isn't guessable (a v4 UUID).
+  const { data, error } = await supabaseAdmin
+    .from("leads")
+    .select("id, name, email, form, tier, start_date")
+    .eq("id", id)
+    .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ lead: data });
 }

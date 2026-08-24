@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { computePlan, ACTIVITY, KIND_COLOR, addWeeks, fmtShort } from "@/lib/plan";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -37,17 +38,19 @@ const TIER_NAMES = {
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+const INITIAL_FORM = {
+  sex: "female",
+  age: "",
+  ft: "",
+  inch: "",
+  weight: "",
+  goal: "",
+  activity: "light",
+};
+
 export default function PhasePlanApp() {
   const [step, setStep] = useState("calc");
-  const [form, setForm] = useState({
-    sex: "female",
-    age: "",
-    ft: "5",
-    inch: "5",
-    weight: "",
-    goal: "",
-    activity: "light",
-  });
+  const [form, setForm] = useState(INITIAL_FORM);
   const [plan, setPlan] = useState(null);
   const [tier, setTier] = useState(null);
   const [leadId, setLeadId] = useState(null);
@@ -179,7 +182,19 @@ export default function PhasePlanApp() {
     setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 60);
   };
 
+  // A real reset, not just a visual one — clears the saved draft too, so a
+  // reload right after doesn't silently resume back into checkout. Without
+  // this, "start over" only looked like it worked until the next refresh.
   const goHome = () => {
+    try {
+      window.localStorage.removeItem("phaseplan:client");
+    } catch (e) {}
+    setForm(INITIAL_FORM);
+    setPlan(null);
+    setTier(null);
+    setLeadId(null);
+    setEmail("");
+    setStartDate(todayISO());
     setStep("calc");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -193,6 +208,9 @@ export default function PhasePlanApp() {
           <span className="mark">{COACH.name}</span>
           <span className="mark-note">{COACH.tagline}</span>
         </button>
+        <Link href="/login" className="client-login">
+          Client login
+        </Link>
       </header>
 
       {step === "calc" || step === "plan" ? (
@@ -222,9 +240,9 @@ export default function PhasePlanApp() {
             <div className="row">
               <Field label="Height">
                 <div className="height">
-                  <input className="num sm" inputMode="numeric" value={form.ft} onChange={set("ft")} />
+                  <input className="num sm" inputMode="numeric" value={form.ft} onChange={set("ft")} placeholder="5" />
                   <span className="unit">ft</span>
-                  <input className="num sm" inputMode="numeric" value={form.inch} onChange={set("inch")} />
+                  <input className="num sm" inputMode="numeric" value={form.inch} onChange={set("inch")} placeholder="5" />
                   <span className="unit">in</span>
                 </div>
               </Field>
@@ -285,7 +303,7 @@ export default function PhasePlanApp() {
         </div>
       )}
 
-      {step === "pricing" && <Pricing plan={plan} onChoose={choose} onBack={() => setStep("plan")} />}
+      {step === "pricing" && <Pricing plan={plan} onChoose={choose} onBack={() => setStep("plan")} onStartOver={goHome} />}
 
       {step === "checkout" && (
         <Checkout
@@ -294,6 +312,7 @@ export default function PhasePlanApp() {
           leadId={leadId}
           startDate={startDate}
           onBack={() => setStep("pricing")}
+          onStartOver={goHome}
         />
       )}
 
@@ -305,6 +324,10 @@ export default function PhasePlanApp() {
           from your real data starting week two. If you're pregnant, managing a medical
           condition, or have a history with food and your body that makes numbers hard,
           talk to a doctor before starting any new program.
+        </p>
+        <p className="footer-links">
+          <Link href="/privacy">Privacy</Link> · <Link href="/terms">Terms</Link> ·{" "}
+          <Link href="/refund">Refunds</Link> · <Link href="/login">Client login</Link>
         </p>
       </footer>
     </div>
@@ -510,7 +533,7 @@ function PlanView({ plan, startDate, onStartDateChange, onReady }) {
   );
 }
 
-function Pricing({ plan, onChoose, onBack }) {
+function Pricing({ plan, onChoose, onBack, onStartOver }) {
   const tiers = [
     {
       key: "diy",
@@ -565,7 +588,10 @@ function Pricing({ plan, onChoose, onBack }) {
 
   return (
     <section className="pricing">
-      <button className="back" onClick={onBack}>← back to my timeline</button>
+      <div className="back-row">
+        <button className="back" onClick={onBack}>← back to my timeline</button>
+        <button className="back start-over" onClick={onStartOver}>Start over</button>
+      </div>
       <p className="eyebrow center">Pick your lane</p>
       <h2 className="ph2">
         {plan?.totalWeeks ? `${plan.totalWeeks} weeks of work. ` : ""}Let me teach you how.
@@ -600,7 +626,7 @@ function Pricing({ plan, onChoose, onBack }) {
   );
 }
 
-function Checkout({ plan, tier, leadId, startDate, onBack }) {
+function Checkout({ plan, tier, leadId, startDate, onBack, onStartOver }) {
   const [c, setC] = useState({ name: "", email: "", agree: false });
   const [err, setErr] = useState("");
   const [going, setGoing] = useState(false);
@@ -611,7 +637,7 @@ function Checkout({ plan, tier, leadId, startDate, onBack }) {
 
   const go = async () => {
     if (!c.name.trim()) return setErr("I need a name to put on your plan.");
-    if (!/^\S+@\S+\.\S+$/.test(c.email)) return setErr("That email doesn't look right — check it and try again.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(c.email)) return setErr("That email doesn't look right — check it and try again.");
     if (!c.agree) return setErr("Tick the box so we're on the same page about what you're buying.");
     setErr("");
     setGoing(true);
@@ -651,7 +677,10 @@ function Checkout({ plan, tier, leadId, startDate, onBack }) {
 
   return (
     <section className="checkout">
-      <button className="back" onClick={onBack}>← back to plans</button>
+      <div className="back-row">
+        <button className="back" onClick={onBack}>← back to plans</button>
+        <button className="back start-over" onClick={onStartOver}>Start over</button>
+      </div>
       <p className="eyebrow center">Create your profile</p>
       <h2 className="ph2">Last screen before we start.</h2>
 
@@ -672,7 +701,19 @@ function Checkout({ plan, tier, leadId, startDate, onBack }) {
             <input type="checkbox" checked={c.agree} onChange={(e) => setC({ ...c, agree: e.target.checked })} />
             <span>
               I understand this is coaching, not medical care, and that my timeline is an
-              estimate that gets adjusted from my real data.
+              estimate that gets adjusted from my real data. I agree to the{" "}
+              <Link href="/terms" target="_blank" onClick={(e) => e.stopPropagation()}>
+                Terms
+              </Link>
+              ,{" "}
+              <Link href="/privacy" target="_blank" onClick={(e) => e.stopPropagation()}>
+                Privacy Policy
+              </Link>
+              , and{" "}
+              <Link href="/refund" target="_blank" onClick={(e) => e.stopPropagation()}>
+                Refund Policy
+              </Link>
+              .
             </span>
           </label>
 
@@ -749,8 +790,7 @@ function PostPaymentGate({ email }) {
       <p className="lede center">
         {status === "sent" &&
           "Click it to open your portal — that's where your check-ins, macros, and messages live from here on, not your inbox."}
-        {status === "unconfigured" &&
-          "Login isn't wired up yet on this build — once it is, this is where you'd get a magic link into your portal."}
+        {status === "unconfigured" && "Message Liz directly with your email and she'll get your portal access sorted."}
         {status === "error" && "Message Liz directly and she'll get you sorted."}
       </p>
     </section>
@@ -781,8 +821,10 @@ function Styles() {
 .pp *{box-sizing:border-box}
 .pp button:focus-visible, .pp input:focus-visible { outline:2px solid var(--sage); outline-offset:2px; }
 
-.masthead{max-width:760px;margin:0 auto;padding:26px 0 16px;display:flex;border-bottom:1px solid var(--edge)}
+.masthead{max-width:760px;margin:0 auto;padding:26px 0 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--edge)}
 .mark-link{background:none;border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:5px;text-align:left;cursor:pointer;color:inherit;font-family:inherit}
+.client-login{font-family:var(--mono);font-size:12px;color:var(--mute);text-decoration:none;letter-spacing:.04em}
+.client-login:hover{color:var(--sage)}
 .mark{font-family:var(--display);font-size:19px;letter-spacing:.01em}
 .mark-note{font-family:var(--mono);font-size:11px;color:var(--sage);letter-spacing:.06em}
 
@@ -832,7 +874,7 @@ function Styles() {
 .cta:hover{filter:brightness(1.08)}
 .cta.big{max-width:420px;margin:34px auto 0;display:block}
 .cta.small{margin-top:16px;padding:13px;font-size:14px}
-.micro{font-family:var(--mono);font-size:11px;color:var(--mute);text-align:center;margin:12px 0 0}
+.micro{font-family:var(--mono);font-size:13px;color:#4A4550;text-align:center;margin:12px 0 0;line-height:1.6}
 .micro.center{margin-top:26px}
 .problem{color:var(--rose);font-size:14px;margin:16px 0 0;line-height:1.5}
 
@@ -867,6 +909,9 @@ function Styles() {
 /* pricing */
 .pricing{max-width:1000px;margin:70px auto 0}
 .back{background:none;border:0;color:var(--mute);font-family:var(--mono);font-size:12px;cursor:pointer;padding:0;margin-bottom:26px}
+.back-row{display:flex;justify-content:space-between;align-items:center}
+.back-row .back{margin-bottom:26px}
+.back.start-over{text-decoration:underline;text-underline-offset:3px}
 .ph2{font-family:var(--display);font-weight:600;font-size:clamp(28px,5vw,44px);line-height:1.08;text-align:center;margin:0 auto 40px;max-width:18ch;letter-spacing:-.02em}
 .tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(224px,1fr));gap:14px}
 .tier{background:var(--tide);border:1px solid var(--edge);border-radius:4px;padding:22px;position:relative;display:flex;flex-direction:column}
@@ -885,8 +930,11 @@ function Styles() {
 .gate{max-width:600px;margin:70px auto 0;text-align:center}
 .mono{font-family:var(--mono)}
 
-footer{max-width:700px;margin:70px auto 0;padding-top:22px;border-top:1px solid var(--edge)}
-footer p{font-size:12px;color:var(--mute);line-height:1.6;margin:0}
+footer{max-width:700px;margin:70px auto 0;padding-top:22px;padding-bottom:40px;border-top:1px solid var(--edge)}
+footer p{font-size:13.5px;color:#4A4550;line-height:1.65;margin:0}
+footer .footer-links{margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--mute)}
+footer .footer-links a{color:var(--mute);text-decoration:underline;text-underline-offset:3px}
+footer .footer-links a:hover{color:var(--sage)}
 
 /* checkout */
 .checkout{max-width:900px;margin:60px auto 0}
@@ -897,6 +945,7 @@ footer p{font-size:12px;color:var(--mute);line-height:1.6;margin:0}
 .hint{display:block;font-size:12px;color:var(--mute);margin-top:6px;line-height:1.45}
 .agree{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--mute);margin:6px 0 20px;line-height:1.45;cursor:pointer}
 .agree input{margin-top:3px;accent-color:var(--gold);flex:none}
+.agree a{color:var(--sage);text-decoration:underline;text-underline-offset:2px}
 .co-summary{background:var(--tide);border:1px solid var(--gold);border-radius:4px;padding:22px}
 .co-summary h3{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin:0 0 14px;font-weight:400}
 .co-line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-family:var(--display);font-size:20px;font-weight:600}
