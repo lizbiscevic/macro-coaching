@@ -246,9 +246,11 @@ function DiyPlanReadOnly({ lead, week1 }) {
     }, [])
     .filter((p) => p.kind !== "baseline");
 
+  const approved = Boolean(lead.diy_plan_approved_at);
+
   return (
     <section className="block">
-      <h2>Client's plan (auto-generated)</h2>
+      <h2>Client's plan (auto-generated{approved ? " — sent" : " — awaiting your review"})</h2>
 
       <div className="stats">
         <NumberStat k="Calories" v={plan.cutCals} range={`${plan.cutCals - 25}–${plan.cutCals + 25}`} />
@@ -297,7 +299,53 @@ function DiyPlanReadOnly({ lead, week1 }) {
         </ul>
         <p className="empty">{rules.doneText}</p>
       </details>
+
+      <ApproveDiyPlan leadId={lead.id} approved={approved} />
     </section>
+  );
+}
+
+// The client doesn't see this plan until she's looked at it — this is
+// where that gate actually opens. Doesn't let her edit the computed
+// numbers (that's a bigger feature for later if she wants it), just
+// review-and-release, with an optional note that rides along with the
+// "your plan's ready" message.
+function ApproveDiyPlan({ leadId, approved }) {
+  const [note, setNote] = useState("");
+  const [status, setStatus] = useState(approved ? "approved" : "idle"); // idle | saving | approved | error
+
+  if (status === "approved") {
+    return <p className="hint">✓ Approved — client's been notified.</p>;
+  }
+
+  const approve = async () => {
+    setStatus("saving");
+    try {
+      const res = await fetch("/api/plan/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId, note: note || null }),
+      });
+      setStatus(res.ok ? "approved" : "error");
+    } catch (e) {
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="approve-block">
+      <label className="flabel">Note to include (optional)</label>
+      <textarea
+        className="approve-note"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Anything you want to add when this goes out..."
+      />
+      <button className="cta" onClick={approve} disabled={status === "saving"}>
+        {status === "saving" ? "Sending…" : "Approve & send to client"}
+      </button>
+      {status === "error" && <p className="problem">That didn't go through — try again.</p>}
+    </div>
   );
 }
 
@@ -603,6 +651,9 @@ function Styles() {
 .problem{font-size:13px;color:var(--rose);margin:10px 0 0}
 .review-reason{font-size:14px;color:#4A4550;margin:0 0 16px;max-width:60ch}
 .review-actions{display:flex;gap:10px;flex-wrap:wrap}
+.flabel{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+.approve-block{margin-top:20px;padding-top:20px;border-top:1px solid var(--edge)}
+.approve-note{width:100%;min-height:70px;background:var(--ink);border:1px solid var(--edge);color:var(--chalk);font-family:var(--body);font-size:14px;padding:10px;border-radius:3px;resize:vertical;margin-bottom:12px}
 
 .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
 .photo-cell{display:block;border:1px solid var(--edge);border-radius:4px;overflow:hidden;text-decoration:none;color:var(--mute);font-family:var(--mono);font-size:10px}

@@ -191,6 +191,10 @@ function Stat({ k, v, u }) {
 function DiyPortal({ lead, checkins, initialMessages, mymacrosConnected, mymacrosNotice }) {
   const [week1, setWeek1] = useState(checkins.find((c) => c.week_number === 1) || null);
   const unlocked = isCheckinComplete(week1);
+  // The plan is computed the moment week 1 is complete, but not shown
+  // until the coach has actually looked at it — she reviews every
+  // auto-generated DIY plan before it goes out, not just an FYI after.
+  const approved = Boolean(lead.diy_plan_approved_at);
 
   return (
     <div className="portal">
@@ -213,11 +217,13 @@ function DiyPortal({ lead, checkins, initialMessages, mymacrosConnected, mymacro
       <StepHeader n={1} title="Track everything for a week." />
       <DiyCheckIn week1={week1} onSaved={setWeek1} mymacrosConnected={mymacrosConnected} mymacrosNotice={mymacrosNotice} />
 
-      <StepHeader n={2} title="Your plan" locked={!unlocked} />
-      {unlocked ? (
+      <StepHeader n={2} title="Your plan" locked={!unlocked || !approved} />
+      {!unlocked ? (
+        <LockedCard note="Unlocks once you've logged at least 5 days and your weigh-in." />
+      ) : approved ? (
         <DiyPlan lead={lead} week1={week1} />
       ) : (
-        <LockedCard note="Unlocks once you've logged at least 5 days and your weigh-in." />
+        <LockedCard note="Your numbers are in — I'm reviewing your plan now and it'll be ready soon." />
       )}
 
       <section className="messages">

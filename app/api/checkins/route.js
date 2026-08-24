@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getLeadForUser } from "@/lib/leads";
 import { isCheckinComplete } from "@/lib/plan";
+import { notifyCoach } from "@/lib/notify";
 
 /* ------------------------------------------------------------------
    A client's own weekly check-ins only — the lead is resolved from
@@ -56,19 +57,25 @@ export async function POST(req) {
   const { error } = await supabaseAdmin.from("checkins").upsert(row, { onConflict: "lead_id,week_number" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // DIY has no coach setting a plan by hand — the moment baseline week is
-  // done, generate it automatically and let them know, once.
-  if (lead.tier === "diy" && weekNumber === 1 && !lead.plan_notified_at && isCheckinComplete(row)) {
+  // Baseline week done -> the coach needs to act: approve a DIY client's
+  // auto-generated plan before it goes out (see /api/plan/approve), or set
+  // a coached client's targets by hand (see /api/plan). Ping her once,
+  // never on a later re-save of week 1.
+  if (weekNumber === 1 && !lead.baseline_ready_notified_at && isCheckinComplete(row)) {
     await supabaseAdmin
       .from("leads")
-      .update({ plan_notified_at: new Date().toISOString() })
+      .update({ baseline_ready_notified_at: new Date().toISOString() })
       .eq("id", lead.id)
-      .is("plan_notified_at", null);
-    await supabaseAdmin.from("messages").insert({
-      lead_id: lead.id,
-      sender: "coach",
-      body: "Your full plan's ready — check out Step 2 in your portal.",
-    });
+      .is("baseline_ready_notified_at", null);
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.yourmacrojourney.com";
+    const name = lead.name || lead.email || "A client";
+    const link = `${siteUrl}/coach/${lead.id}`;
+    if (lead.tier === "diy") {
+      await notifyCoach(`Review ${name}'s DIY plan`, `${name} finished their baseline week. Review and approve their plan: ${link}`);
+    } else {
+      await notifyCoach(`Set ${name}'s plan`, `${name} finished their baseline week. Set their macro targets: ${link}`);
+    }
   }
 
   return NextResponse.json({ ok: true });

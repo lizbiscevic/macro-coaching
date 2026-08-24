@@ -37,6 +37,16 @@ create index if not exists leads_email_idx on leads(email);
 alter table leads add column if not exists macro_targets jsonb;
 alter table leads add column if not exists plan_notified_at timestamptz;
 
+-- DIY's plan is auto-computed but not auto-released — the client sees
+-- "being finalized" until the coach reviews it and approves, which is
+-- what actually sets plan_notified_at/sends the client their "ready"
+-- message (see /api/plan/approve). baseline_ready_notified_at guards the
+-- one-time "a client finished their baseline week" email to the coach
+-- herself (both tiers — DIY needs her to review, coached needs her to
+-- set targets), so it doesn't refire on every re-save of week 1.
+alter table leads add column if not exists diy_plan_approved_at timestamptz;
+alter table leads add column if not exists baseline_ready_notified_at timestamptz;
+
 -- One row per client per week. `unique(lead_id, week_number)` makes a
 -- check-in a natural upsert target and "did they check in this week" a
 -- direct row-presence check.

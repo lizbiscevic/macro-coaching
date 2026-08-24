@@ -11,7 +11,8 @@ const FLAG_LABEL = {
 const PLAN_LABEL = {
   set: "Set",
   "not-set": "Not set",
-  auto: "Auto",
+  pending: "Needs review",
+  sent: "Sent",
 };
 
 export default function CoachDashboard({ rows }) {
