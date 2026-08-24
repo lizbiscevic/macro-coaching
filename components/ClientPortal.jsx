@@ -72,6 +72,36 @@ function MacroDayGrids({ protein, fat, carbs, setProtein, setFat, setCarbs, onDi
   );
 }
 
+const MYMACROS_NOTICE = {
+  connected: { tone: "ok", text: "Connected — your numbers will start coming in automatically." },
+  error: { tone: "err", text: "Something went wrong connecting My Macros+ — try again." },
+  not_configured: { tone: "err", text: "My Macros+ isn't set up on this site yet — message Liz." },
+};
+
+// Each client connects their own My Macros+ account (OAuth) — not a shared
+// coach connection, and not a "type your email + add me in My Circle"
+// lookup either. Whoever authorizes is whoever the token belongs to.
+function MyMacrosConnect({ connected, notice }) {
+  const n = MYMACROS_NOTICE[notice];
+  return (
+    <div className="mmplus">
+      <h3>Skip the manual logging</h3>
+      {connected ? (
+        <p className="mm-connected">✓ My Macros+ connected — your daily numbers come in automatically.</p>
+      ) : (
+        <>
+          <p>Connect My Macros+ and your daily numbers come in automatically — no filling in this table.</p>
+          <a className="cta small" href="/api/mymacros/connect">
+            Connect My Macros+
+          </a>
+        </>
+      )}
+      {n && <p className={`mm-notice mm-notice-${n.tone}`}>{n.text}</p>}
+      <p className="attrib">Macros Powered by My Macros+</p>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------
    Two entirely separate flows: coached tiers (m1/m3/m6) get an
    ongoing weekly check-in loop, a call-booking step, and a plan the
@@ -80,11 +110,28 @@ function MacroDayGrids({ protein, fat, carbs, setProtein, setFat, setCarbs, onDi
    booking step at all.
 -------------------------------------------------------------------*/
 
-export default function ClientPortal({ lead, checkins, initialMessages, bookingUrl }) {
+export default function ClientPortal({ lead, checkins, initialMessages, bookingUrl, mymacrosConnected, mymacrosNotice }) {
   if (lead.tier === "diy") {
-    return <DiyPortal lead={lead} checkins={checkins} initialMessages={initialMessages} />;
+    return (
+      <DiyPortal
+        lead={lead}
+        checkins={checkins}
+        initialMessages={initialMessages}
+        mymacrosConnected={mymacrosConnected}
+        mymacrosNotice={mymacrosNotice}
+      />
+    );
   }
-  return <CoachedPortal lead={lead} checkins={checkins} initialMessages={initialMessages} bookingUrl={bookingUrl} />;
+  return (
+    <CoachedPortal
+      lead={lead}
+      checkins={checkins}
+      initialMessages={initialMessages}
+      bookingUrl={bookingUrl}
+      mymacrosConnected={mymacrosConnected}
+      mymacrosNotice={mymacrosNotice}
+    />
+  );
 }
 
 function signOutAndGoHome() {
@@ -141,7 +188,7 @@ function Stat({ k, v, u }) {
 
 /* ============================== DIY ============================== */
 
-function DiyPortal({ lead, checkins, initialMessages }) {
+function DiyPortal({ lead, checkins, initialMessages, mymacrosConnected, mymacrosNotice }) {
   const [week1, setWeek1] = useState(checkins.find((c) => c.week_number === 1) || null);
   const unlocked = isCheckinComplete(week1);
 
@@ -164,7 +211,7 @@ function DiyPortal({ lead, checkins, initialMessages }) {
       </section>
 
       <StepHeader n={1} title="Track everything for a week." />
-      <DiyCheckIn week1={week1} onSaved={setWeek1} />
+      <DiyCheckIn week1={week1} onSaved={setWeek1} mymacrosConnected={mymacrosConnected} mymacrosNotice={mymacrosNotice} />
 
       <StepHeader n={2} title="Your plan" locked={!unlocked} />
       {unlocked ? (
@@ -181,13 +228,12 @@ function DiyPortal({ lead, checkins, initialMessages }) {
   );
 }
 
-function DiyCheckIn({ week1, onSaved }) {
+function DiyCheckIn({ week1, onSaved, mymacrosConnected, mymacrosNotice }) {
   const [weight, setWeight] = useState(week1?.weigh_in != null ? String(week1.weigh_in) : "");
   const toStrs = (arr) => (arr ? arr.map((n) => (n == null ? "" : String(n))) : Array(7).fill(""));
   const [protein, setProtein] = useState(toStrs(week1?.protein));
   const [fat, setFat] = useState(toStrs(week1?.fat));
   const [carbs, setCarbs] = useState(toStrs(week1?.carbs));
-  const [mm, setMm] = useState(week1?.mymacros_email || "");
   const [status, setStatus] = useState("idle"); // idle | saving | error
 
   const dayCalories = dailyCaloriesFrom(protein, fat, carbs);
@@ -213,7 +259,6 @@ function DiyCheckIn({ week1, onSaved }) {
           protein: proteinNums,
           fat: fatNums,
           carbs: carbsNums,
-          mymacrosEmail: mm || null,
         }),
       });
       if (res.ok) {
@@ -225,7 +270,6 @@ function DiyCheckIn({ week1, onSaved }) {
           protein: proteinNums,
           fat: fatNums,
           carbs: carbsNums,
-          mymacros_email: mm || null,
         });
       } else {
         setStatus("error");
@@ -308,27 +352,7 @@ function DiyCheckIn({ week1, onSaved }) {
         </p>
       )}
 
-      <div className="mmplus">
-        <h3>Skip the manual logging</h3>
-        <p>
-          If you track in My Macros+, connect it and your daily numbers come in automatically —
-          no filling in this table.
-        </p>
-        <ol className="mm-steps">
-          <li>Open My Macros+ and go to My Circle</li>
-          <li>Add Liz as your coach using the email she sent you</li>
-          <li>Drop your My Macros+ email below so it can find you</li>
-        </ol>
-        <div className="withunit">
-          <input
-            className="txt"
-            value={mm}
-            onChange={(e) => setMm(e.target.value)}
-            placeholder="your My Macros+ email"
-          />
-        </div>
-        <p className="attrib">Macros Powered by My Macros+</p>
-      </div>
+      <MyMacrosConnect connected={mymacrosConnected} notice={mymacrosNotice} />
     </section>
   );
 }
@@ -517,7 +541,7 @@ function DiyPlan({ lead, week1 }) {
 
 /* ============================ Coached ============================ */
 
-function CoachedPortal({ lead, checkins, initialMessages, bookingUrl }) {
+function CoachedPortal({ lead, checkins, initialMessages, bookingUrl, mymacrosConnected, mymacrosNotice }) {
   const [checkinsState, setCheckinsState] = useState(checkins);
   const week1 = checkinsState.find((c) => c.week_number === 1);
   // Once week one's logged, swap the formula guess for the client's real
@@ -562,6 +586,8 @@ function CoachedPortal({ lead, checkins, initialMessages, bookingUrl }) {
         totalWeeks={totalWeeks}
         existing={existing}
         onSaved={onCheckinSaved}
+        mymacrosConnected={mymacrosConnected}
+        mymacrosNotice={mymacrosNotice}
       />
 
       <StepHeader n={2} title="Book your call" locked={!unlocked} />
@@ -667,13 +693,12 @@ function CoachedPlan({ macroTargets }) {
   );
 }
 
-function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved }) {
+function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved, mymacrosConnected, mymacrosNotice }) {
   const [weight, setWeight] = useState(existing?.weigh_in != null ? String(existing.weigh_in) : "");
   const toStrs = (arr) => (arr ? arr.map((n) => (n == null ? "" : String(n))) : Array(7).fill(""));
   const [protein, setProtein] = useState(toStrs(existing?.protein));
   const [fat, setFat] = useState(toStrs(existing?.fat));
   const [carbs, setCarbs] = useState(toStrs(existing?.carbs));
-  const [mm, setMm] = useState(existing?.mymacros_email || "");
   const [saved, setSaved] = useState(false);
 
   const save = async () => {
@@ -693,7 +718,6 @@ function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved
           protein: proteinNums,
           fat: fatNums,
           carbs: carbsNums,
-          mymacrosEmail: mm || null,
         }),
       });
       if (res.ok) {
@@ -705,7 +729,6 @@ function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved
           protein: proteinNums,
           fat: fatNums,
           carbs: carbsNums,
-          mymacros_email: mm || null,
         });
       } else {
         setSaved("error");
@@ -829,30 +852,7 @@ function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved
         </div>
       )}
 
-      <div className="mmplus">
-        <h3>Skip the manual logging</h3>
-        <p>
-          If you track in My Macros+, connect it and your daily numbers come to me
-          automatically — no screenshots, no filling in this table every Sunday.
-        </p>
-        <ol className="mm-steps">
-          <li>Open My Macros+ and go to My Circle</li>
-          <li>Add me as your coach using the email I sent you</li>
-          <li>Drop your My Macros+ email below so I can find you</li>
-        </ol>
-        <div className="withunit">
-          <input
-            className="txt"
-            value={mm}
-            onChange={(e) => {
-              setMm(e.target.value);
-              setSaved(false);
-            }}
-            placeholder="your My Macros+ email"
-          />
-        </div>
-        <p className="attrib">Macros Powered by My Macros+</p>
-      </div>
+      <MyMacrosConnect connected={mymacrosConnected} notice={mymacrosNotice} />
     </section>
   );
 }
@@ -931,10 +931,10 @@ function Styles() {
 .mmplus{margin-top:22px;background:var(--tide);border:1px solid var(--edge);border-radius:4px;padding:22px}
 .mmplus h3{font-family:var(--display);font-size:20px;font-weight:600;margin:0 0 8px}
 .mmplus p{font-size:14px;color:#4A4550;margin:0 0 14px;line-height:1.5}
-.mm-steps{counter-reset:m;list-style:none;padding:0;margin:0 0 16px}
-.mm-steps li{counter-increment:m;position:relative;padding-left:26px;margin-bottom:7px;font-size:14px;color:var(--chalk)}
-.mm-steps li:before{content:counter(m);position:absolute;left:0;top:0;font-family:var(--mono);font-size:11px;color:var(--sage)}
-.txt{background:var(--ink);border:1px solid var(--edge);color:var(--chalk);font-size:15px;padding:12px;border-radius:3px;width:100%}
+.mm-connected{color:var(--sage) !important;font-weight:600}
+.mm-notice{font-family:var(--mono);font-size:12px;margin:14px 0 0 !important}
+.mm-notice-ok{color:var(--sage) !important}
+.mm-notice-err{color:var(--rose) !important}
 .attrib{font-family:var(--mono) !important;font-size:10px !important;color:var(--mute) !important;letter-spacing:.08em;margin:14px 0 0 !important;text-align:right}
 
 .booking{max-width:700px;margin:0 auto}

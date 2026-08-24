@@ -3,11 +3,9 @@ import { createClient } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isCoach } from "@/lib/isCoach";
 import { buildClientRow } from "@/lib/coachMetrics";
-import { isConnected } from "@/lib/mymacros";
 import CoachDashboard from "@/components/CoachDashboard";
 
-export default async function CoachPage({ searchParams }) {
-  const params = await searchParams;
+export default async function CoachPage() {
   const supabase = await createClient();
   if (!supabase) redirect("/login");
 
@@ -34,7 +32,5 @@ export default async function CoachPage({ searchParams }) {
     .map((lead) => buildClientRow(lead, checkinsByLead.get(lead.id) || []))
     .sort((a, b) => b.flags.length - a.flags.length);
 
-  const mymacrosConnected = await isConnected();
-
-  return <CoachDashboard rows={rows} mymacrosConnected={mymacrosConnected} mymacrosNotice={params?.mymacros} />;
+  return <CoachDashboard rows={rows} />;
 }

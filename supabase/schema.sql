@@ -103,16 +103,15 @@ create table if not exists messages (
 alter table messages enable row level security;
 create index if not exists messages_lead_id_idx on messages(lead_id, created_at);
 
--- My Macros+ OAuth connection — coach-level, one row ever (the check
--- constraint enforces the singleton). Liz authorizes once; the app then
--- has a refreshable token pair to call the My Macros+ API on her behalf.
-create table if not exists mymacros_connection (
-  id int primary key default 1,
-  access_token text,
-  refresh_token text,
-  expires_at timestamptz,
-  mymacros_user_id text,
-  updated_at timestamptz not null default now(),
-  constraint mymacros_connection_singleton check (id = 1)
-);
-alter table mymacros_connection enable row level security;
+-- My Macros+ OAuth — per-client, not coach-level. Confirmed directly with
+-- their team (Aug 2026): each client does their own OAuth connection from
+-- their portal, and the token you get back is already scoped to just that
+-- one account — there's no "coach connects once, then looks up any client"
+-- mode. The earlier mymacros_connection table modeled the wrong thing
+-- (a coach-level singleton) and is unused now; left in place rather than
+-- dropped since it may still exist in some environments, but nothing
+-- reads or writes it anymore.
+alter table leads add column if not exists mymacros_access_token text;
+alter table leads add column if not exists mymacros_refresh_token text;
+alter table leads add column if not exists mymacros_token_expires_at timestamptz;
+alter table leads add column if not exists mymacros_user_id text;

@@ -5,18 +5,24 @@ export async function GET(req) {
   const { searchParams, origin } = new URL(req.url);
   const code = searchParams.get("code");
   const state = searchParams.get("state");
-  const cookieState = req.cookies.get("mymacros_oauth_state")?.value;
 
-  if (!code || !state || state !== cookieState) {
-    return NextResponse.redirect(`${origin}/coach?mymacros=error`);
+  let saved;
+  try {
+    saved = JSON.parse(req.cookies.get("mymacros_oauth")?.value || "null");
+  } catch (e) {
+    saved = null;
+  }
+
+  if (!code || !state || !saved || state !== saved.csrfToken || !saved.leadId) {
+    return NextResponse.redirect(`${origin}/portal?mymacros=error`);
   }
 
   try {
-    await exchangeCode(code, `${origin}/api/mymacros/callback`);
-    const res = NextResponse.redirect(`${origin}/coach?mymacros=connected`);
-    res.cookies.delete("mymacros_oauth_state");
+    await exchangeCode(code, `${origin}/api/mymacros/callback`, saved.leadId);
+    const res = NextResponse.redirect(`${origin}/portal?mymacros=connected`);
+    res.cookies.delete("mymacros_oauth");
     return res;
   } catch (e) {
-    return NextResponse.redirect(`${origin}/coach?mymacros=error`);
+    return NextResponse.redirect(`${origin}/portal?mymacros=error`);
   }
 }

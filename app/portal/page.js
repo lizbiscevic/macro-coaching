@@ -4,7 +4,8 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getLeadForUser } from "@/lib/leads";
 import ClientPortal from "@/components/ClientPortal";
 
-export default async function PortalPage() {
+export default async function PortalPage({ searchParams }) {
+  const params = await searchParams;
   const supabase = await createClient();
   if (!supabase) redirect("/login");
 
@@ -31,6 +32,8 @@ export default async function PortalPage() {
       checkins={checkins || []}
       initialMessages={messages || []}
       bookingUrl={process.env.NEXT_PUBLIC_BOOKING_URL || ""}
+      mymacrosConnected={Boolean(lead.mymacros_user_id)}
+      mymacrosNotice={params?.mymacros}
     />
   );
 }
