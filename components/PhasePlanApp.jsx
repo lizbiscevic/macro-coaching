@@ -23,8 +23,8 @@ const COACH = {
 const PRICES = {
   diy: { amount: "$89", cadence: "one time" },
   m1: { amount: "$249", cadence: "per month · cancel any time" },
-  m3: { amount: "$199/mo", cadence: "billed one time at $597 · 3 months" },
-  m6: { amount: "$169/mo", cadence: "billed one time at $1,014 · 6 months" },
+  m3: { amount: "$199/month", cadence: "billed as a one-time payment of $597 · 3 months" },
+  m6: { amount: "$169/month", cadence: "billed as a one-time payment of $1,014 · 6 months" },
 };
 
 const TIER_NAMES = {
