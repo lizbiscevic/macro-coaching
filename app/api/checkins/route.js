@@ -38,7 +38,7 @@ export async function POST(req) {
   if (!lead) return NextResponse.json({ error: "not authorized" }, { status: 401 });
 
   const body = await req.json();
-  const { weekNumber, weighIn, calories, protein, mymacrosEmail } = body || {};
+  const { weekNumber, weighIn, calories, protein, fat, carbs, mymacrosEmail } = body || {};
   if (!weekNumber) return NextResponse.json({ error: "weekNumber required" }, { status: 400 });
 
   const row = {
@@ -47,6 +47,8 @@ export async function POST(req) {
     weigh_in: weighIn ?? null,
     calories: calories ?? null,
     protein: protein ?? null,
+    fat: fat ?? null,
+    carbs: carbs ?? null,
     mymacros_email: mymacrosEmail ?? null,
     updated_at: new Date().toISOString(),
   };

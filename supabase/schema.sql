@@ -54,10 +54,18 @@ create table if not exists checkins (
 alter table checkins enable row level security;
 create index if not exists checkins_lead_id_idx on checkins(lead_id, week_number);
 
--- Daily protein, 7 values Mon..Sun, same shape as calories. Coached tiers
--- only — needed to grade "on plan" (calories AND protein within range),
--- not just calorie adherence, per the weekly-adjustment rules.
+-- Daily protein, 7 values Mon..Sun, same shape as calories. Needed to
+-- grade "on plan" (calories AND protein within range), not just calorie
+-- adherence, per the weekly-adjustment rules.
 alter table checkins add column if not exists protein jsonb;
+
+-- Daily fat and carbs, same 7-value shape. Check-ins collect protein/fat/
+-- carbs directly now rather than a single calorie number — `calories` is
+-- computed from these three (protein×4 + carbs×4 + fat×9) and still
+-- stored, so everything reading `calories` elsewhere keeps working
+-- unchanged.
+alter table checkins add column if not exists fat jsonb;
+alter table checkins add column if not exists carbs jsonb;
 
 -- Set when a diet break is applied by the weekly-adjustment tool, so the
 -- coach view knows to show "on a break until X" instead of re-running the

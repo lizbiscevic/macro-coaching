@@ -28,6 +28,50 @@ function supportMailto(subject, instruction = "Screenshot attached.") {
   )}`;
 }
 
+// Calories are never typed in directly — they're derived from protein/fat/
+// carbs so the two numbers can't disagree with each other. A day only
+// counts once all three macros are logged for it; a partial day (e.g.
+// protein but no fat yet) isn't guessed at, it's just not counted yet.
+function dailyCaloriesFrom(protein, fat, carbs) {
+  return protein.map((p, i) => {
+    const pN = parseFloat(p);
+    const fN = parseFloat(fat[i]);
+    const cN = parseFloat(carbs[i]);
+    if (isNaN(pN) || isNaN(fN) || isNaN(cN)) return null;
+    return Math.round(pN * 4 + cN * 4 + fN * 9);
+  });
+}
+
+function MacroGrid({ label, values, onChange }) {
+  return (
+    <div className="ci-cals">
+      <span className="flabel">{label}</span>
+      <div className="cal-grid">
+        {DAYS.map((d, i) => (
+          <label className="cal-cell" key={d}>
+            <span>{d}</span>
+            <input className="num sm" inputMode="numeric" value={values[i]} onChange={(e) => onChange(i, e.target.value)} placeholder="—" />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MacroDayGrids({ protein, fat, carbs, setProtein, setFat, setCarbs, onDirty }) {
+  const upd = (arr, setArr) => (i, v) => {
+    setArr(arr.map((d, j) => (i === j ? v : d)));
+    onDirty?.();
+  };
+  return (
+    <>
+      <MacroGrid label="Protein, day by day (grams)" values={protein} onChange={upd(protein, setProtein)} />
+      <MacroGrid label="Fat, day by day (grams)" values={fat} onChange={upd(fat, setFat)} />
+      <MacroGrid label="Carbs, day by day (grams)" values={carbs} onChange={upd(carbs, setCarbs)} />
+    </>
+  );
+}
+
 /* ------------------------------------------------------------------
    Two entirely separate flows: coached tiers (m1/m3/m6) get an
    ongoing weekly check-in loop, a call-booking step, and a plan the
@@ -139,31 +183,50 @@ function DiyPortal({ lead, checkins, initialMessages }) {
 
 function DiyCheckIn({ week1, onSaved }) {
   const [weight, setWeight] = useState(week1?.weigh_in != null ? String(week1.weigh_in) : "");
-  const [cal, setCal] = useState(
-    week1?.calories ? week1.calories.map((c) => (c == null ? "" : String(c))) : Array(7).fill("")
-  );
+  const toStrs = (arr) => (arr ? arr.map((n) => (n == null ? "" : String(n))) : Array(7).fill(""));
+  const [protein, setProtein] = useState(toStrs(week1?.protein));
+  const [fat, setFat] = useState(toStrs(week1?.fat));
+  const [carbs, setCarbs] = useState(toStrs(week1?.carbs));
   const [mm, setMm] = useState(week1?.mymacros_email || "");
   const [status, setStatus] = useState("idle"); // idle | saving | error
 
-  const updCal = (i, v) => setCal(cal.map((d, j) => (i === j ? v : d)));
-
-  const nums = cal.map((c) => parseFloat(c)).filter((n) => !isNaN(n));
-  const avgC = nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
-  const complete = nums.length >= 5 && weight;
+  const dayCalories = dailyCaloriesFrom(protein, fat, carbs);
+  const loggedCals = dayCalories.filter((c) => c != null);
+  const avgC = loggedCals.length ? Math.round(loggedCals.reduce((a, b) => a + b, 0) / loggedCals.length) : null;
+  const complete = loggedCals.length >= 5 && weight;
 
   const save = async () => {
     setStatus("saving");
     const weighIn = weight ? parseFloat(weight) : null;
-    const calories = cal.map((c) => (c === "" ? null : parseFloat(c)));
+    const calories = dailyCaloriesFrom(protein, fat, carbs);
+    const proteinNums = protein.map((p) => (p === "" ? null : parseFloat(p)));
+    const fatNums = fat.map((f) => (f === "" ? null : parseFloat(f)));
+    const carbsNums = carbs.map((c) => (c === "" ? null : parseFloat(c)));
     try {
       const res = await fetch("/api/checkins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekNumber: 1, weighIn, calories, mymacrosEmail: mm || null }),
+        body: JSON.stringify({
+          weekNumber: 1,
+          weighIn,
+          calories,
+          protein: proteinNums,
+          fat: fatNums,
+          carbs: carbsNums,
+          mymacrosEmail: mm || null,
+        }),
       });
       if (res.ok) {
         setStatus("idle");
-        onSaved({ week_number: 1, weigh_in: weighIn, calories, mymacros_email: mm || null });
+        onSaved({
+          week_number: 1,
+          weigh_in: weighIn,
+          calories,
+          protein: proteinNums,
+          fat: fatNums,
+          carbs: carbsNums,
+          mymacros_email: mm || null,
+        });
       } else {
         setStatus("error");
       }
@@ -229,26 +292,10 @@ function DiyCheckIn({ week1, onSaved }) {
           </div>
         </div>
 
-        <div className="ci-cals">
-          <span className="flabel">Calories, day by day</span>
-          <div className="cal-grid">
-            {DAYS.map((d, i) => (
-              <label className="cal-cell" key={d}>
-                <span>{d}</span>
-                <input
-                  className="num sm"
-                  inputMode="numeric"
-                  value={cal[i]}
-                  onChange={(e) => updCal(i, e.target.value)}
-                  placeholder="—"
-                />
-              </label>
-            ))}
-          </div>
-          <p className="ci-avg">
-            Daily average <span className="mono">{avgC || "—"}</span>
-          </p>
-        </div>
+        <MacroDayGrids protein={protein} fat={fat} carbs={carbs} setProtein={setProtein} setFat={setFat} setCarbs={setCarbs} />
+        <p className="ci-avg">
+          Daily average calories <span className="mono">{avgC || "—"}</span>
+        </p>
       </div>
 
       <button className="cta" onClick={save} disabled={status === "saving"}>
@@ -622,37 +669,44 @@ function CoachedPlan({ macroTargets }) {
 
 function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved }) {
   const [weight, setWeight] = useState(existing?.weigh_in != null ? String(existing.weigh_in) : "");
-  const [cal, setCal] = useState(
-    existing?.calories ? existing.calories.map((c) => (c == null ? "" : String(c))) : Array(7).fill("")
-  );
-  const [protein, setProtein] = useState(
-    existing?.protein ? existing.protein.map((p) => (p == null ? "" : String(p))) : Array(7).fill("")
-  );
+  const toStrs = (arr) => (arr ? arr.map((n) => (n == null ? "" : String(n))) : Array(7).fill(""));
+  const [protein, setProtein] = useState(toStrs(existing?.protein));
+  const [fat, setFat] = useState(toStrs(existing?.fat));
+  const [carbs, setCarbs] = useState(toStrs(existing?.carbs));
   const [mm, setMm] = useState(existing?.mymacros_email || "");
   const [saved, setSaved] = useState(false);
 
-  const updCal = (i, v) => {
-    setCal(cal.map((d, j) => (i === j ? v : d)));
-    setSaved(false);
-  };
-  const updProtein = (i, v) => {
-    setProtein(protein.map((d, j) => (i === j ? v : d)));
-    setSaved(false);
-  };
-
   const save = async () => {
     const weighIn = weight ? parseFloat(weight) : null;
-    const calories = cal.map((c) => (c === "" ? null : parseFloat(c)));
-    const proteinLog = protein.map((p) => (p === "" ? null : parseFloat(p)));
+    const calories = dailyCaloriesFrom(protein, fat, carbs);
+    const proteinNums = protein.map((p) => (p === "" ? null : parseFloat(p)));
+    const fatNums = fat.map((f) => (f === "" ? null : parseFloat(f)));
+    const carbsNums = carbs.map((c) => (c === "" ? null : parseFloat(c)));
     try {
       const res = await fetch("/api/checkins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekNumber: currentWeek, weighIn, calories, protein: proteinLog, mymacrosEmail: mm || null }),
+        body: JSON.stringify({
+          weekNumber: currentWeek,
+          weighIn,
+          calories,
+          protein: proteinNums,
+          fat: fatNums,
+          carbs: carbsNums,
+          mymacrosEmail: mm || null,
+        }),
       });
       if (res.ok) {
         setSaved(true);
-        onSaved({ week_number: currentWeek, weigh_in: weighIn, calories, protein: proteinLog, mymacros_email: mm || null });
+        onSaved({
+          week_number: currentWeek,
+          weigh_in: weighIn,
+          calories,
+          protein: proteinNums,
+          fat: fatNums,
+          carbs: carbsNums,
+          mymacros_email: mm || null,
+        });
       } else {
         setSaved("error");
       }
@@ -661,9 +715,10 @@ function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved
     }
   };
 
-  const nums = cal.map((c) => parseFloat(c)).filter((n) => !isNaN(n));
-  const avgC = nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
-  const complete = nums.length >= 5 && weight;
+  const dayCalories = dailyCaloriesFrom(protein, fat, carbs);
+  const loggedCals = dayCalories.filter((c) => c != null);
+  const avgC = loggedCals.length ? Math.round(loggedCals.reduce((a, b) => a + b, 0) / loggedCals.length) : null;
+  const complete = loggedCals.length >= 5 && weight;
   const isBaseline = currentWeek === 1;
 
   return (
@@ -739,44 +794,18 @@ function CheckIn({ plan, formulaTdee, currentWeek, totalWeeks, existing, onSaved
           </div>
         </div>
 
-        <div className="ci-cals">
-          <span className="flabel">Calories, day by day</span>
-          <div className="cal-grid">
-            {DAYS.map((d, i) => (
-              <label className="cal-cell" key={d}>
-                <span>{d}</span>
-                <input
-                  className="num sm"
-                  inputMode="numeric"
-                  value={cal[i]}
-                  onChange={(e) => updCal(i, e.target.value)}
-                  placeholder="—"
-                />
-              </label>
-            ))}
-          </div>
-          <p className="ci-avg">
-            Daily average <span className="mono">{avgC || "—"}</span>
-          </p>
-        </div>
-
-        <div className="ci-cals">
-          <span className="flabel">Protein, day by day (grams)</span>
-          <div className="cal-grid">
-            {DAYS.map((d, i) => (
-              <label className="cal-cell" key={d}>
-                <span>{d}</span>
-                <input
-                  className="num sm"
-                  inputMode="numeric"
-                  value={protein[i]}
-                  onChange={(e) => updProtein(i, e.target.value)}
-                  placeholder="—"
-                />
-              </label>
-            ))}
-          </div>
-        </div>
+        <MacroDayGrids
+          protein={protein}
+          fat={fat}
+          carbs={carbs}
+          setProtein={setProtein}
+          setFat={setFat}
+          setCarbs={setCarbs}
+          onDirty={() => setSaved(false)}
+        />
+        <p className="ci-avg">
+          Daily average calories <span className="mono">{avgC || "—"}</span>
+        </p>
       </div>
 
       <button className="cta" onClick={save}>
@@ -873,6 +902,8 @@ function Styles() {
 .big-num{font-size:30px !important;max-width:170px;text-align:center}
 .withunit{display:flex;align-items:center;gap:8px}
 .unit{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.ci-cals{margin-bottom:20px}
+.ci-cals:last-of-type{margin-bottom:0}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
 .cal-cell{display:flex;flex-direction:column;gap:5px;text-align:center}
 .cal-cell span{font-family:var(--mono);font-size:10px;color:var(--mute)}
