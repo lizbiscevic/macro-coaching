@@ -12,7 +12,12 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 export async function POST(req) {
   if (!supabaseAdmin) return NextResponse.json({ ok: false, reason: "not-configured" }, { status: 501 });
 
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch (err) {
+    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+  }
   const { leadId, form, startDate, tier, name, email } = body || {};
   if (!leadId) return NextResponse.json({ error: "leadId required" }, { status: 400 });
 

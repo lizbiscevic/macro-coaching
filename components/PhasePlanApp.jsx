@@ -27,6 +27,16 @@ const PRICES = {
   m6: { amount: "$169/month", cadence: "billed as a one-time payment of $1,014 · 6 months" },
 };
 
+// What Stripe actually charges today, for the checkout page specifically —
+// the number next to the pay button has to match the Stripe total exactly,
+// not the derived per-month figure PRICES leads with for marketing.
+const CHECKOUT_TOTAL = {
+  diy: { amount: "$89", cadence: "one time" },
+  m1: { amount: "$249", cadence: "per month · cancel any time" },
+  m3: { amount: "$597", cadence: "one time · $199/month over 3 months" },
+  m6: { amount: "$1,014", cadence: "one time · $169/month over 6 months" },
+};
+
 const TIER_NAMES = {
   diy: "Do it yourself",
   m1: "One month",
@@ -63,15 +73,17 @@ export default function PhasePlanApp() {
   // leadId is the anchor: it's generated the moment they have a real plan and
   // gets passed to Stripe as client_reference_id so the webhook can match the
   // payment back to this record without relying on the email staying identical.
-  // Written to localStorage for instant same-browser reloads AND to a Supabase
-  // row (best-effort, fire-and-forget — /api/lead degrades to a no-op until
-  // Supabase is configured) so it survives a lost tab/device per the brief's
-  // "persist before payment" note. `paid` itself is never trusted from here —
-  // only the server ever sets that flag to true, via checkout-status or the
-  // Stripe webhook.
+  // Written to sessionStorage (not localStorage) so it only resumes a reload
+  // in THIS tab — a fresh tab, a bookmark, or a shared/public computer always
+  // lands on the hero, never a stranger's leftover checkout. The Supabase row
+  // (best-effort, fire-and-forget — /api/lead degrades to a no-op until
+  // Supabase is configured) is what survives an actual lost tab/device, via
+  // the session_id round-trip from Stripe. `paid` itself is never trusted
+  // from here — only the server ever sets that flag to true, via
+  // checkout-status or the Stripe webhook.
   const save = (data) => {
     try {
-      window.localStorage.setItem("phaseplan:client", JSON.stringify(data));
+      window.sessionStorage.setItem("phaseplan:client", JSON.stringify(data));
     } catch (e) {}
     if (data.leadId) {
       fetch("/api/lead", {
@@ -88,12 +100,12 @@ export default function PhasePlanApp() {
   };
 
   useEffect(() => {
-    // Hydrating from localStorage (an external system) on mount, per
+    // Hydrating from sessionStorage (an external system) on mount, per
     // https://react.dev/learn/synchronizing-with-effects — can't read it
     // during render since it isn't available during SSR.
     /* eslint-disable react-hooks/set-state-in-effect */
     try {
-      const raw = window.localStorage.getItem("phaseplan:client");
+      const raw = window.sessionStorage.getItem("phaseplan:client");
       if (raw) {
         const v = JSON.parse(raw);
         if (v.form) setForm(v.form);
@@ -133,7 +145,7 @@ export default function PhasePlanApp() {
         window.history.replaceState({}, "", window.location.pathname);
         if (!isPaid || !confirmedId) return null;
         // Pull the full record back — on a different device/browser than
-        // the one that ran the calculator, localStorage above found nothing.
+        // the one that ran the calculator, sessionStorage above found nothing.
         return fetch(`/api/lead?id=${encodeURIComponent(confirmedId)}`).then((r) => r.json());
       })
       .then((res) => {
@@ -147,7 +159,7 @@ export default function PhasePlanApp() {
         if (lead.email) setEmail(lead.email);
         setStep("start");
         try {
-          window.localStorage.setItem(
+          window.sessionStorage.setItem(
             "phaseplan:client",
             JSON.stringify({ leadId: lead.id, form: lead.form, startDate: lead.start_date, tier: lead.tier, paid: true })
           );
@@ -187,7 +199,7 @@ export default function PhasePlanApp() {
   // this, "start over" only looked like it worked until the next refresh.
   const goHome = () => {
     try {
-      window.localStorage.removeItem("phaseplan:client");
+      window.sessionStorage.removeItem("phaseplan:client");
     } catch (e) {}
     setForm(INITIAL_FORM);
     setPlan(null);
@@ -316,7 +328,7 @@ export default function PhasePlanApp() {
         />
       )}
 
-      {step === "start" && <PostPaymentGate email={email} />}
+      {step === "start" && <PostPaymentGate email={email} leadId={leadId} />}
 
       <footer>
         <p>
@@ -630,7 +642,7 @@ function Checkout({ plan, tier, leadId, startDate, onBack, onStartOver }) {
   const [c, setC] = useState({ name: "", email: "", agree: false });
   const [err, setErr] = useState("");
   const [going, setGoing] = useState(false);
-  const price = PRICES[tier];
+  const price = CHECKOUT_TOTAL[tier];
   const start = new Date(startDate + "T00:00:00");
   const end = addWeeks(start, plan?.totalWeeks || 0);
   const set = (k) => (e) => setC({ ...c, [k]: e.target.value });
@@ -754,7 +766,7 @@ function Checkout({ plan, tier, leadId, startDate, onBack, onStartOver }) {
   );
 }
 
-function PostPaymentGate({ email }) {
+function PostPaymentGate({ email, leadId }) {
   const [status, setStatus] = useState("idle"); // idle | sending | sent | error | unconfigured
   const sentRef = useRef(false);
 
@@ -771,12 +783,33 @@ function PostPaymentGate({ email }) {
       setStatus("error");
       return;
     }
+
+    // A page reload here re-mounts this component and would otherwise ask
+    // Supabase to resend, which it rate-limits — turning an already-sent,
+    // still-valid link into a confusing "That didn't go through" for someone
+    // who never touched their email yet. Remember per-leadId, in this tab
+    // only, that the link already went out, and skip straight to "sent".
+    const sentKey = leadId ? `phaseplan:otp-sent:${leadId}` : null;
+    try {
+      if (sentKey && window.sessionStorage.getItem(sentKey) === "1") {
+        setStatus("sent");
+        return;
+      }
+    } catch (e) {}
+
     setStatus("sending");
     supabaseBrowser.auth
       .signInWithOtp({ email, options: { emailRedirectTo: `${window.location.origin}/auth/callback` } })
-      .then(({ error }) => setStatus(error ? "error" : "sent"));
+      .then(({ error }) => {
+        if (!error && sentKey) {
+          try {
+            window.sessionStorage.setItem(sentKey, "1");
+          } catch (e) {}
+        }
+        setStatus(error ? "error" : "sent");
+      });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [email]);
+  }, [email, leadId]);
 
   return (
     <section className="gate">

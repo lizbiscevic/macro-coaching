@@ -1,6 +1,6 @@
 import "./globals.css";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.yourmacrojourney.com";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://yourmacrojourney.com";
 const title = "Macro Coaching With Liz";
 const description = "No BS. No guesswork. Real timelines and results that stick.";
 

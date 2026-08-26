@@ -1,5 +1,5 @@
 export default function sitemap() {
-  const base = process.env.NEXT_PUBLIC_SITE_URL || "https://www.yourmacrojourney.com";
+  const base = process.env.NEXT_PUBLIC_SITE_URL || "https://yourmacrojourney.com";
   const now = new Date();
   return [
     { url: `${base}/`, lastModified: now, changeFrequency: "monthly", priority: 1 },
